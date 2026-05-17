@@ -1,0 +1,289 @@
+{% extends "base.html" %}
+{% block title %}操作建议{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0">
+        <i class="bi bi-clipboard2-check me-2 text-primary"></i>今日操作建议
+        <small class="text-muted fw-normal fs-6 ms-2" id="advice-date"></small>
+        <small class="text-secondary fw-normal fs-6 ms-1" id="advice-price-date"></small>
+    </h5>
+    <button class="btn btn-sm btn-outline-primary" onclick="loadAdvice()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<!-- 汇总卡片 -->
+<div class="row g-3 mb-4" id="summary-cards">
+    <div class="col-6 col-md-3">
+        <div class="card text-center border-danger">
+            <div class="card-body py-2">
+                <div class="text-danger small fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i>止损预警</div>
+                <div class="fw-bold fs-3 text-danger" id="cnt-alert">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center border-success">
+            <div class="card-body py-2">
+                <div class="text-success small fw-bold"><i class="bi bi-cart-plus me-1"></i>建议买入</div>
+                <div class="fw-bold fs-3 text-success" id="cnt-buy">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center border-warning">
+            <div class="card-body py-2">
+                <div class="text-warning small fw-bold"><i class="bi bi-cart-dash me-1"></i>建议卖出</div>
+                <div class="fw-bold fs-3 text-warning" id="cnt-sell">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center border-secondary">
+            <div class="card-body py-2">
+                <div class="text-secondary small fw-bold"><i class="bi bi-hand-thumbs-up me-1"></i>继续持有</div>
+                <div class="fw-bold fs-3 text-secondary" id="cnt-hold">—</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div id="advice-loading" class="text-center py-5 text-muted">
+    <span class="spinner-border me-2"></span>加载中...
+</div>
+
+<div id="advice-body" style="display:none">
+
+    <!-- 止损预警 -->
+    <div id="section-alert" class="mb-4" style="display:none">
+        <div class="card border-danger">
+            <div class="card-header bg-danger text-white fw-bold">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>止损预警
+                <small class="ms-2 fw-normal opacity-75">当前亏损已超过止损线，建议及时止损</small>
+            </div>
+            <div class="card-body p-0" id="table-alert"></div>
+        </div>
+    </div>
+
+    <!-- 建议卖出 -->
+    <div id="section-sell" class="mb-4" style="display:none">
+        <div class="card border-warning">
+            <div class="card-header bg-warning text-dark fw-bold">
+                <i class="bi bi-cart-dash me-2"></i>建议卖出
+                <small class="ms-2 fw-normal opacity-75">持有中但不在今日推荐；🔒 表示未到最小持仓期，暂不建议卖</small>
+            </div>
+            <div class="card-body p-0" id="table-sell"></div>
+        </div>
+    </div>
+
+    <!-- 建议买入 -->
+    <div id="section-buy" class="mb-4" style="display:none">
+        <div class="card border-success">
+            <div class="card-header bg-success text-white fw-bold">
+                <i class="bi bi-cart-plus me-2"></i>建议买入
+                <small class="ms-2 fw-normal opacity-75">今日推荐但尚未持有，按评分排序</small>
+            </div>
+            <div class="card-body p-0" id="table-buy"></div>
+        </div>
+    </div>
+
+    <!-- 继续持有 -->
+    <div id="section-hold" class="mb-4" style="display:none">
+        <div class="card">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-hand-thumbs-up me-2 text-primary"></i>继续持有
+                <small class="ms-2 text-muted fw-normal">持有中且在今日推荐，暂不操作</small>
+            </div>
+            <div class="card-body p-0" id="table-hold"></div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function loadAdvice() {
+    document.getElementById('advice-loading').style.display = 'block';
+    document.getElementById('advice-body').style.display = 'none';
+
+    try {
+        const d = await API.get('/api/advice');
+
+        if (d.error) {
+            document.getElementById('advice-loading').innerHTML =
+                `<div class="alert alert-warning m-3"><i class="bi bi-exclamation-circle me-2"></i>${d.error}</div>`;
+            return;
+        }
+
+        document.getElementById('advice-date').textContent = d.picks_date ? `（${d.picks_date} 推荐）` : '';
+        const pd = d.latest_price_date;
+        document.getElementById('advice-price-date').textContent =
+            pd ? `· 价格截至 ${pd.slice(0,4)}-${pd.slice(4,6)}-${pd.slice(6,8)}` : '';
+        const s = d.summary || {};
+        document.getElementById('cnt-alert').textContent = s.alert_count || 0;
+        document.getElementById('cnt-buy').textContent   = s.buy_count || 0;
+        document.getElementById('cnt-sell').textContent  = s.sell_count || 0;
+        document.getElementById('cnt-hold').textContent  = s.hold_count || 0;
+
+        // 止损预警
+        if (d.alerts && d.alerts.length) {
+            document.getElementById('section-alert').style.display = '';
+            document.getElementById('table-alert').innerHTML = buildHoldingTable(d.alerts, true);
+        }
+
+        // 建议卖出
+        if (d.sell && d.sell.length) {
+            document.getElementById('section-sell').style.display = '';
+            document.getElementById('table-sell').innerHTML = buildHoldingTable(d.sell, false);
+        }
+
+        // 建议买入
+        if (d.buy && d.buy.length) {
+            document.getElementById('section-buy').style.display = '';
+            document.getElementById('table-buy').innerHTML = buildBuyTable(d.buy);
+        }
+
+        // 继续持有
+        if (d.hold && d.hold.length) {
+            document.getElementById('section-hold').style.display = '';
+            document.getElementById('table-hold').innerHTML = buildHoldTable(d.hold);
+        }
+
+        document.getElementById('advice-loading').style.display = 'none';
+        document.getElementById('advice-body').style.display = '';
+
+    } catch (e) {
+        document.getElementById('advice-loading').innerHTML =
+            `<div class="alert alert-danger m-3">加载失败：${e.message}</div>`;
+    }
+}
+
+function buildHoldingTable(list, isAlert) {
+    const sharesKey = list[0] && 'net_shares' in list[0] ? 'net_shares' : 'shares';
+    const rows = list.map(p => {
+        const pct = parseFloat(p.pct_chg || 0);
+        const cost = parseFloat(p.avg_cost || 0);
+        const cur  = parseFloat(p.current_price || 0);
+        const sh   = parseFloat(p[sharesKey] || 0);
+        const gainAmt = cur > 0 && cost > 0 ? ((cur - cost) * sh) : null;
+        const pctBadge = pct >= 0
+            ? `<span class="text-success fw-bold">+${pct.toFixed(2)}%</span>`
+            : `<span class="text-danger fw-bold">${pct.toFixed(2)}%</span>`;
+        const holdDays = p.hold_days != null ? `${p.hold_days}天` : '';
+        let statusBadge;
+        if (isAlert) {
+            statusBadge = `<span class="badge bg-danger">止损!</span>`;
+        } else if (p.locked) {
+            statusBadge = `<span class="badge bg-secondary" title="未到最小持仓期，暂不卖出">🔒 锁定中</span>`;
+        } else {
+            statusBadge = pct >= 0
+                ? `<span class="badge bg-success-subtle text-success">可卖出</span>`
+                : `<span class="badge bg-danger-subtle text-danger">可卖出</span>`;
+        }
+        return `<tr class="${p.locked ? 'text-muted' : ''}">
+            <td><strong>${p.name}</strong></td>
+            <td><code class="text-primary small">${p.ts_code}</code></td>
+            <td class="text-end">${sh.toLocaleString()} 股</td>
+            <td class="text-end">¥${cost.toFixed(2)}</td>
+            <td class="text-end">${cur > 0 ? '¥' + cur.toFixed(2) : '—'}</td>
+            <td class="text-end">${pctBadge}</td>
+            <td class="text-end text-muted small">${gainAmt != null ? (gainAmt >= 0 ? '+' : '') + Math.round(gainAmt).toLocaleString() + ' 元' : '—'}</td>
+            <td class="text-muted small">${holdDays}</td>
+            <td>${statusBadge}</td>
+        </tr>`;
+    }).join('');
+    return `<div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr><th>名称</th><th>代码</th><th class="text-end">持仓</th><th class="text-end">成本</th><th class="text-end">现价</th><th class="text-end">盈亏%</th><th class="text-end">浮动盈亏</th><th>持仓天数</th><th>操作</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+}
+
+function buildBuyTable(list) {
+    const rows = list.map((p, i) => {
+        const trackBadge = p.track === 'sector_rotation'
+            ? `<span class="badge bg-primary-subtle text-primary">A轨</span>`
+            : (p.track === 'value' || p.track === 'dividend')
+            ? `<span class="badge bg-success-subtle text-success">B轨</span>`
+            : p.track === 'both'
+            ? `<span class="badge bg-warning-subtle text-warning-emphasis">AB轨</span>`
+            : p.track ? `<span class="badge bg-secondary-subtle text-secondary">${p.track}</span>` : '';
+        const newBadge = p.is_new ? `<span class="badge bg-warning text-dark ms-1">新</span>` : '';
+        return `<tr>
+            <td class="text-muted">${i + 1}</td>
+            <td><strong>${p.name}</strong>${newBadge}</td>
+            <td><code class="text-primary small">${p.ts_code}</code></td>
+            <td>${scoreBar(p.score, 1)}</td>
+            <td>${trackBadge}</td>
+            <td class="text-muted small" style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.concept}</td>
+            <td class="text-end">${p.current_price > 0 ? '¥' + parseFloat(p.current_price).toFixed(2) : '—'}</td>
+        </tr>`;
+    }).join('');
+    return `<div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr><th>#</th><th>名称</th><th>代码</th><th style="min-width:120px">评分</th><th>轨道</th><th>概念</th><th class="text-end">现价</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+}
+
+function buildHoldTable(list) {
+    const sorted = [...list].sort((a, b) => b.pct_chg - a.pct_chg);
+    const rows = sorted.map(p => {
+        const pct = parseFloat(p.pct_chg || 0);
+        const trackBadge = p.track === 'sector_rotation'
+            ? `<span class="badge bg-primary-subtle text-primary">A轨</span>`
+            : (p.track === 'value' || p.track === 'dividend')
+            ? `<span class="badge bg-success-subtle text-success">B轨</span>`
+            : p.track === 'both'
+            ? `<span class="badge bg-warning-subtle text-warning-emphasis">AB轨</span>`
+            : p.track ? `<span class="badge bg-secondary-subtle text-secondary">${p.track}</span>` : '';
+        const newBadge = p.is_new ? `<span class="badge bg-warning text-dark ms-1">新上榜</span>` : '';
+        const pctBadge = pct >= 0
+            ? `<span class="text-success">+${pct.toFixed(2)}%</span>`
+            : `<span class="text-danger">${pct.toFixed(2)}%</span>`;
+        const sh = parseFloat(p.shares || p.net_shares || 0);
+        return `<tr>
+            <td><strong>${p.name}</strong>${newBadge}</td>
+            <td><code class="text-primary small">${p.ts_code}</code></td>
+            <td>${scoreBar(p.score, 1)}</td>
+            <td>${trackBadge}</td>
+            <td class="text-end">${sh.toLocaleString()} 股</td>
+            <td class="text-end">¥${parseFloat(p.avg_cost).toFixed(2)}</td>
+            <td class="text-end">${p.current_price > 0 ? '¥' + parseFloat(p.current_price).toFixed(2) : '—'}</td>
+            <td class="text-end">${pctBadge}</td>
+            <td class="text-muted small" style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.concept}</td>
+        </tr>`;
+    }).join('');
+    return `<div class="table-responsive">
+        <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr><th>名称</th><th>代码</th><th style="min-width:120px">评分</th><th>轨道</th><th class="text-end">持仓</th><th class="text-end">成本</th><th class="text-end">现价</th><th class="text-end">盈亏%</th><th>概念</th></tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+}
+
+// scoreBar 直接复用 app.js 里的（已全局可用），但这里 score 是 0~1 范围
+function scoreBar(score, maxVal) {
+    const pct = Math.min(Math.round(score / maxVal * 100), 100);
+    const color = pct >= 70 ? 'bg-success' : pct >= 40 ? 'bg-primary' : 'bg-secondary';
+    return `<div class="d-flex align-items-center gap-1">
+        <div class="progress flex-grow-1" style="height:6px">
+            <div class="progress-bar ${color}" style="width:${pct}%"></div>
+        </div>
+        <small class="text-muted" style="width:36px;text-align:right">${score.toFixed(3)}</small>
+    </div>`;
+}
+
+loadAdvice();
+</script>
+{% endblock %}

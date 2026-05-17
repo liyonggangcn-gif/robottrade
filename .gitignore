@@ -21,6 +21,7 @@ env/
 *.swo
 
 # Secrets — 不纳入版本控制
+config/settings.yaml
 config/secrets.local.yaml
 
 # Data & outputs
@@ -33,13 +34,27 @@ logs/
 # Worktrees
 .claude/worktrees/
 
-# Temp scripts (root level)
+# Temp/debug scripts (root level)
 _*.py
 check_*.py
 debug*.py
 test_*.py
+fix_*.py
+fill_*.py
+reset*.py
+backtest_*.py
+clear*.py
+sync_*.py
+check*.db
+check*.sql
+check*.md
+fix*.sql
+fix*.md
 *.bak/
 merge_bak/
+_debug_*.py
+_run_*.py
+_compare_*.py
 
 # OS
 .DS_Store

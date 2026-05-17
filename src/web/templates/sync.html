@@ -1,0 +1,182 @@
+{% extends "base.html" %}
+{% block title %}数据同步{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-cloud-arrow-down me-2 text-info"></i>数据同步</h5>
+    <button class="btn btn-sm btn-outline-primary" onclick="loadSyncStatus()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新状态
+    </button>
+</div>
+
+<!-- 各数据表状态卡片 -->
+<div class="row g-3 mb-4" id="sync-cards">
+    <div class="col-12 text-center py-4 text-muted">
+        <span class="spinner-border spinner-border-sm me-2"></span>检查数据状态...
+    </div>
+</div>
+
+<!-- 同步操作 -->
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <i class="bi bi-play-circle me-1 text-success"></i>手动触发同步
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">同步操作在后台运行，可通过日志页面查看进度。生产服务器上请勿频繁触发。</p>
+        <div class="d-flex flex-wrap gap-3">
+            <div class="card border-primary" style="min-width:200px">
+                <div class="card-body py-3">
+                    <h6 class="text-primary"><i class="bi bi-lightning-charge me-1"></i>快速同步</h6>
+                    <p class="small text-muted mb-3">同步今日全市场行情数据（约6分钟）<br>使用 Tushare 批量接口，覆盖~5470只股票</p>
+                    <button class="btn btn-primary btn-sm w-100" id="btn-fast"
+                            onclick="triggerSync('fast', this)">
+                        <i class="bi bi-play-fill me-1"></i>启动快速同步
+                    </button>
+                </div>
+            </div>
+            <div class="card border-success" style="min-width:200px">
+                <div class="card-body py-3">
+                    <h6 class="text-success"><i class="bi bi-tags me-1"></i>概念同步</h6>
+                    <p class="small text-muted mb-3">同步股票概念/板块分类数据<br>通常每周日凌晨自动执行</p>
+                    <button class="btn btn-success btn-sm w-100" id="btn-concepts"
+                            onclick="triggerSync('concepts', this)">
+                        <i class="bi bi-play-fill me-1"></i>同步概念数据
+                    </button>
+                </div>
+            </div>
+            <div class="card border-warning" style="min-width:200px">
+                <div class="card-body py-3">
+                    <h6 class="text-warning"><i class="bi bi-database-fill-gear me-1"></i>全量同步</h6>
+                    <p class="small text-muted mb-3">全量同步历史行情数据<br>⚠️ 耗时较长，非必要请勿触发</p>
+                    <button class="btn btn-warning btn-sm w-100" id="btn-full"
+                            onclick="triggerSync('full', this)">
+                        <i class="bi bi-play-fill me-1"></i>全量同步（慎用）
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 提示信息 -->
+        <div id="sync-tip" class="mt-3"></div>
+    </div>
+</div>
+
+<!-- Cron 说明 -->
+<div class="card">
+    <div class="card-header bg-white">
+        <i class="bi bi-info-circle me-1 text-info"></i>自动同步计划
+    </div>
+    <div class="card-body">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr><th>时间</th><th>脚本</th><th>说明</th><th>工作日</th></tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="fw-bold text-primary">07:50</td>
+                        <td><code class="small">fast_sync_today.py</code></td>
+                        <td>开盘前同步昨日收盘数据</td>
+                        <td><span class="badge bg-success">周一至周五</span></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-bold text-primary">15:50</td>
+                        <td><code class="small">fast_sync_today.py</code></td>
+                        <td>收盘后同步今日行情（A股15:00收盘）</td>
+                        <td><span class="badge bg-success">周一至周五</span></td>
+                    </tr>
+                    <tr>
+                        <td class="fw-bold text-info">周日 02:00</td>
+                        <td><code class="small">sync_concepts</code></td>
+                        <td>周度更新概念板块映射</td>
+                        <td><span class="badge bg-info">每周日</span></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const tableNames = {
+    stock_daily: { label: '日行情', desc: '每日OHLCV + 财务指标', icon: 'bi-graph-up' },
+    stock_info: { label: '股票信息', desc: '股票代码/名称/行业', icon: 'bi-info-circle' },
+    stock_concepts: { label: '概念板块', desc: '股票-板块映射关系', icon: 'bi-tags' },
+    ai_predictions: { label: 'AI预测', desc: 'LightGBM模型评分', icon: 'bi-cpu' },
+    push_messages: { label: '推送消息', desc: '历史钉钉推送记录', icon: 'bi-chat-dots' },
+    recommendation_track: { label: '推荐追踪', desc: '历史推荐买卖记录', icon: 'bi-bookmark-check' },
+};
+
+async function loadSyncStatus() {
+    const container = document.getElementById('sync-cards');
+    container.innerHTML = `<div class="col-12 text-center py-4 text-muted">
+        <span class="spinner-border spinner-border-sm me-2"></span>检查数据状态...
+    </div>`;
+    try {
+        const d = await API.get('/api/sync/status');
+        let html = '';
+        for (const [table, info] of Object.entries(d)) {
+            const meta = tableNames[table] || { label: table, desc: '', icon: 'bi-database' };
+            const okClass = info.ok ? 'border-success' : 'border-danger';
+            const dotClass = info.ok ? 'ok' : 'error';
+            html += `
+                <div class="col-6 col-md-4 col-lg-2">
+                    <div class="card h-100 ${okClass}">
+                        <div class="card-body py-3">
+                            <div class="d-flex align-items-center mb-2">
+                                <i class="bi ${meta.icon} me-2 text-secondary"></i>
+                                <span class="status-dot ${dotClass}"></span>
+                                <strong class="small">${meta.label}</strong>
+                            </div>
+                            <div class="text-muted" style="font-size:11px">${meta.desc}</div>
+                            <hr class="my-2">
+                            <div class="small"><strong>最新：</strong>${info.latest || '无'}</div>
+                            <div class="small"><strong>总量：</strong>${(info.total || 0).toLocaleString()}</div>
+                            ${info.error ? `<div class="text-danger mt-1" style="font-size:11px">${info.error}</div>` : ''}
+                        </div>
+                    </div>
+                </div>`;
+        }
+        container.innerHTML = html || `<div class="col-12">${emptyHTML('无数据')}</div>`;
+    } catch (e) {
+        container.innerHTML = `<div class="col-12">${errorHTML('加载失败：' + e.message)}</div>`;
+    }
+}
+
+async function triggerSync(mode, btn) {
+    const labels = { fast: '快速同步', concepts: '概念同步', full: '全量同步' };
+    const label = labels[mode] || '同步';
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>启动中...`;
+
+    try {
+        const r = await API.postQuery('/api/sync/trigger', { mode });
+        const tipEl = document.getElementById('sync-tip');
+        if (r.success) {
+            tipEl.innerHTML = `<div class="alert alert-success py-2 mb-0">
+                <i class="bi bi-check-circle me-1"></i>${r.message}
+                <br><small class="text-muted">可通过<a href="/logs" class="ms-1">日志页面</a>查看同步进度</small>
+            </div>`;
+            showToast('success', r.message);
+            // 30秒后刷新状态
+            setTimeout(loadSyncStatus, 30000);
+        } else {
+            tipEl.innerHTML = `<div class="alert alert-danger py-2 mb-0">
+                <i class="bi bi-x-circle me-1"></i>${r.error}
+            </div>`;
+            showToast('danger', r.error);
+        }
+    } catch (e) {
+        showToast('danger', '请求失败：' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = origHTML;
+    }
+}
+
+loadSyncStatus();
+</script>
+{% endblock %}

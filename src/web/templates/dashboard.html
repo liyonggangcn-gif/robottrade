@@ -1,0 +1,358 @@
+{% extends "base.html" %}
+{% block title %}总览{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-speedometer2 me-2 text-primary"></i>系统总览</h5>
+    <div class="d-flex align-items-center gap-2">
+        <div class="progress" style="width:60px;height:6px" title="距下次自动刷新">
+            <div class="progress-bar bg-secondary" id="refresh-progress" style="width:100%"></div>
+        </div>
+        <small class="text-muted" id="refresh-countdown">30s</small>
+    </div>
+</div>
+
+<!-- 状态卡片 -->
+<div class="row g-3 mb-4" id="status-cards">
+    <div class="col-6 col-md-3">
+        <div class="card stat-card primary h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-database me-1"></i>数据状态</div>
+                <div class="fw-bold fs-5" id="s-date">—</div>
+                <div class="text-muted small mt-1" id="s-count">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card success h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-stars me-1"></i>今日选股</div>
+                <div class="fw-bold fs-5" id="s-picks">—</div>
+                <div class="text-muted small mt-1" id="s-picks-date">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card warning h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-bell me-1"></i>最后推送</div>
+                <div class="fw-bold fs-6" id="s-push">—</div>
+                <div class="text-muted small mt-1">钉钉推送时间</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card info h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-cpu me-1"></i>LLM 状态</div>
+                <div class="fw-bold fs-6" id="s-llm">—</div>
+                <div class="text-muted small mt-1" id="s-llm-provider">—</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 快捷操作 + 定时任务 -->
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <i class="bi bi-lightning-charge me-1 text-warning"></i>快捷操作
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-3">手动触发各个模块，操作在后台运行，可通过日志查看进度</p>
+                <div class="d-flex flex-wrap gap-2">
+                    <button class="btn btn-outline-primary btn-sm" onclick="triggerAction('/api/run/morning', this, '<i class=\"bi bi-sunrise me-1\"></i>早盘推送')">
+                        <i class="bi bi-sunrise me-1"></i>早盘推送
+                    </button>
+                    <button class="btn btn-outline-success btn-sm" onclick="triggerAction('/api/run/evening', this, '<i class=\"bi bi-sunset me-1\"></i>晚盘分析')">
+                        <i class="bi bi-sunset me-1"></i>晚盘分析
+                    </button>
+                    <button class="btn btn-outline-info btn-sm" onclick="triggerAction('/api/run/strategy', this, '<i class=\"bi bi-stars me-1\"></i>策略选股')">
+                        <i class="bi bi-stars me-1"></i>策略选股
+                    </button>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="triggerAction('/api/sync/trigger?mode=fast', this, '<i class=\"bi bi-arrow-repeat me-1\"></i>快速同步')">
+                        <i class="bi bi-arrow-repeat me-1"></i>快速同步
+                    </button>
+                    <a href="/picks" class="btn btn-outline-warning btn-sm">
+                        <i class="bi bi-list-stars me-1"></i>查看推荐
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <i class="bi bi-clock-history me-1 text-info"></i>定时任务时间表
+            </div>
+            <div class="card-body">
+                <div class="cron-timeline">
+                    <div class="cron-item">
+                        <div class="cron-time">07:50</div>
+                        <div class="cron-desc">快速同步全市场行情（fast_sync_today.py）</div>
+                    </div>
+                    <div class="cron-item">
+                        <div class="cron-time">08:00</div>
+                        <div class="cron-desc">策略选股 + 钉钉推送（daily_alpha_run.py --skip-sync --skip-qlib）</div>
+                    </div>
+                    <div class="cron-item">
+                        <div class="cron-time">08:30</div>
+                        <div class="cron-desc">早盘推送（morning_push.py）</div>
+                    </div>
+                    <div class="cron-item">
+                        <div class="cron-time">15:50</div>
+                        <div class="cron-desc">收盘后数据同步（fast_sync_today.py）</div>
+                    </div>
+                    <div class="cron-item">
+                        <div class="cron-time">16:00</div>
+                        <div class="cron-desc">晚间复盘推送（evening_push.py）</div>
+                    </div>
+                    <div class="cron-item">
+                        <div class="cron-time">周日 02:00</div>
+                        <div class="cron-desc">概念板块同步（sync_concepts）</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ETF 抄底雷达 -->
+<div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-graph-down-arrow me-1 text-danger"></i>ETF 抄底反弹雷达</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadETF()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+    <div class="card-body p-0" id="etf-container">
+        <div class="text-center py-3 text-muted">
+            <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+        </div>
+    </div>
+</div>
+
+<!-- Agent 账户快览 -->
+<div class="card mb-4">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-robot me-1 text-primary"></i>Agent 模拟账户</span>
+        <a href="/agent" class="btn btn-sm btn-outline-primary">驾驶舱 →</a>
+    </div>
+    <div class="card-body py-2" id="agent-mini-container">
+        <div class="text-center py-2 text-muted small">
+            <span class="spinner-border spinner-border-sm me-1"></span>加载中...
+        </div>
+    </div>
+</div>
+
+<!-- 最近推送消息 -->
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-chat-dots me-1 text-primary"></i>最近推送消息</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadMessages()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+    <div class="card-body p-0" id="messages-container">
+        <div class="text-center py-4 text-muted">
+            <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 加载系统状态
+async function loadStatus() {
+    try {
+        const d = await API.get('/api/status');
+        document.getElementById('s-date').textContent = d.latest_date || '无数据';
+        document.getElementById('s-count').textContent = `${(d.stock_count || 0).toLocaleString()} 只股票`;
+        document.getElementById('s-picks').textContent = `${d.today_picks || 0} 只`;
+        document.getElementById('s-picks-date').textContent = `选股日期：${d.latest_picks_date || '无'}`;
+        document.getElementById('s-push').textContent = d.last_push || '无';
+        document.getElementById('s-llm').innerHTML = d.llm_ok
+            ? '<span class="badge bg-success">在线</span>'
+            : '<span class="badge bg-danger">离线</span>';
+        document.getElementById('s-llm-provider').textContent = d.llm_provider || '';
+    } catch (e) {
+        console.error('状态加载失败', e);
+    }
+}
+
+// 加载推送消息
+async function loadMessages() {
+    const container = document.getElementById('messages-container');
+    container.innerHTML = loadingHTML();
+    try {
+        const d = await API.get('/api/messages?limit=20');
+        const msgs = d.messages || [];
+        if (!msgs.length) {
+            container.innerHTML = emptyHTML('暂无推送记录');
+            return;
+        }
+        const rows = msgs.map(m => {
+            const statusBg = m.send_status === 'success' ? 'bg-success' : 'bg-danger';
+            const time = (m.send_time || m.created_at || '').toString().substring(0, 16);
+            const typeMap = { morning: '早盘', evening: '晚盘', strategy: '选股', test: '测试' };
+            const typeLabel = typeMap[m.message_type] || m.message_type || '系统';
+            return `<tr>
+                <td><span class="badge bg-secondary">${typeLabel}</span></td>
+                <td class="fw-medium">${m.title || ''}</td>
+                <td class="text-muted small" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${m.content || ''}</td>
+                <td class="text-muted small">${time}</td>
+                <td><span class="badge ${statusBg}">${m.send_status === 'success' ? '成功' : '失败'}</span></td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>类型</th><th>标题</th><th>内容</th><th>时间</th><th>状态</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+    } catch (e) {
+        container.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+// 触发操作的包装函数
+function triggerAction(url, btn, label) {
+    runAction(url, btn, label, true);
+}
+
+// 加载 ETF 抄底
+async function loadETF() {
+    const container = document.getElementById('etf-container');
+    container.innerHTML = loadingHTML('抓取ETF行情并计算指标（约15-30秒）...');
+    try {
+        const d = await API.get('/api/etf/picks?top_n=6');
+        if (d.error || !d.picks || !d.picks.length) {
+            container.innerHTML = emptyHTML(d.error || '暂无符合条件的ETF');
+            return;
+        }
+        const typeLabel = { astock: 'A股ETF', commodity: '商品ETF', qdii: 'QDII' };
+        const typeBg    = { astock: 'bg-primary', commodity: 'bg-warning text-dark', qdii: 'bg-info' };
+        const rows = d.picks.map(e => {
+            const ret5Class  = e.ret_5d  >= 0 ? 'profit' : 'loss';
+            const ret20Class = e.ret_20d >= 0 ? 'profit' : 'loss';
+            const typeCls = typeBg[e.etf_type] || 'bg-secondary';
+            const typeText = typeLabel[e.etf_type] || e.etf_type;
+            return `<tr>
+                <td><strong>${e.name}</strong></td>
+                <td><code class="text-primary small">${e.code}</code></td>
+                <td><span class="badge ${typeCls}">${typeText}</span></td>
+                <td>${scoreBar(e.score, 1)}</td>
+                <td class="text-center text-muted small">${e.drawdown.toFixed(1)}%</td>
+                <td class="text-center text-muted small">${e.rsi.toFixed(1)}</td>
+                <td class="text-center"><span class="${ret5Class}">${e.ret_5d >= 0 ? '+' : ''}${e.ret_5d.toFixed(2)}%</span></td>
+                <td class="text-center"><span class="${ret20Class}">${e.ret_20d >= 0 ? '+' : ''}${e.ret_20d.toFixed(2)}%</span></td>
+                <td class="text-muted small">${e.advice || ''}</td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>名称</th><th>代码</th><th>类型</th>
+                            <th style="min-width:120px">评分</th>
+                            <th class="text-center">回调幅度</th>
+                            <th class="text-center">RSI</th>
+                            <th class="text-center">5日涨跌</th>
+                            <th class="text-center">20日涨跌</th>
+                            <th>建仓建议</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>
+            <div class="px-3 py-2 text-muted small border-top">
+                ⚠️ 抄底有风险，建议分批建仓，严格止损
+            </div>`;
+    } catch (e) {
+        container.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+// Agent 账户快览
+async function loadAgentMini() {
+    const container = document.getElementById('agent-mini-container');
+    try {
+        const d = await API.get('/api/agent/status');
+        const acc = d.account || {};
+        if (acc.error) {
+            container.innerHTML = '<div class="text-muted small py-1">模拟账户未初始化</div>';
+            return;
+        }
+        const total = acc.total_assets || 0;
+        const cash  = acc.cash || 0;
+        const mv    = acc.market_value || 0;
+        const pnl   = acc.profit_pct || 0;
+        const pnlCls = pnl >= 0 ? 'text-danger' : 'text-success';  // A股涨红跌绿
+        const pnlSign = pnl >= 0 ? '+' : '';
+        const posRatio = total > 0 ? ((mv / total) * 100).toFixed(1) : '0.0';
+        const plan = d.today_plan;
+        const planBadge = plan && !plan.error
+            ? `<span class="badge bg-success ms-2">已决策</span>`
+            : `<span class="badge bg-secondary ms-2">未决策</span>`;
+
+        container.innerHTML = `
+            <div class="row g-2 align-items-center">
+                <div class="col-auto">
+                    <div class="text-muted small">总资产</div>
+                    <div class="fw-bold">${(total / 10000).toFixed(1)} 万</div>
+                </div>
+                <div class="col-auto border-start ps-3">
+                    <div class="text-muted small">现金</div>
+                    <div class="fw-bold">${(cash / 10000).toFixed(1)} 万</div>
+                </div>
+                <div class="col-auto border-start ps-3">
+                    <div class="text-muted small">仓位</div>
+                    <div class="fw-bold">${posRatio}%</div>
+                </div>
+                <div class="col-auto border-start ps-3">
+                    <div class="text-muted small">累计盈亏</div>
+                    <div class="fw-bold ${pnlCls}">${pnlSign}${pnl.toFixed(2)}%</div>
+                </div>
+                <div class="col-auto border-start ps-3">
+                    <div class="text-muted small">今日决策</div>
+                    <div>${planBadge}</div>
+                </div>
+                <div class="col-auto ms-auto">
+                    <a href="/agent/account" class="btn btn-xs btn-outline-secondary" style="font-size:12px">账户详情</a>
+                </div>
+            </div>`;
+    } catch (e) {
+        container.innerHTML = '<div class="text-muted small py-1">Agent账户加载失败</div>';
+    }
+}
+
+// 倒计时进度条
+let _countdownSec = 30;
+function _tickCountdown() {
+    _countdownSec--;
+    if (_countdownSec <= 0) _countdownSec = 30;
+    const pct = (_countdownSec / 30) * 100;
+    const bar = document.getElementById('refresh-progress');
+    const label = document.getElementById('refresh-countdown');
+    if (bar) bar.style.width = pct + '%';
+    if (label) label.textContent = _countdownSec + 's';
+}
+setInterval(_tickCountdown, 1000);
+
+// 初始化
+loadStatus();
+loadMessages();
+loadETF();
+loadAgentMini();
+setInterval(() => { loadStatus(); loadAgentMini(); _countdownSec = 30; }, 30000);
+</script>
+{% endblock %}

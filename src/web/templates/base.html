@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}QuantAgent-Alpha{% endblock %}</title>
+    <!-- 使用本地静态资源替代CDN -->
+    <link href="/static/bootstrap.min.css" rel="stylesheet">
+    <link href="/static/bootstrap-icons.min.css" rel="stylesheet">
+    <script src="/static/chart.umd.min.js"></script>
+    <link href="/static/style.css" rel="stylesheet">
+</head>
+<body>
+
+<!-- 顶部导航栏 -->
+<nav class="navbar navbar-dark bg-dark fixed-top px-3 shadow-sm">
+    <a class="navbar-brand fw-bold d-flex align-items-center" href="/">
+        <i class="bi bi-robot me-2 text-primary"></i>
+        <span>QuantAgent-Alpha</span>
+    </a>
+    <div class="d-flex align-items-center gap-3">
+        <span class="badge bg-secondary" id="db-badge" title="数据库连接状态">
+            <span class="spinner-border spinner-border-sm" style="width:10px;height:10px"></span> DB
+        </span>
+        <span class="badge bg-secondary" id="llm-badge" title="LLM连接状态">
+            <span class="spinner-border spinner-border-sm" style="width:10px;height:10px"></span> LLM
+        </span>
+        <span class="badge bg-secondary" id="agent-badge" title="Agent状态">
+            <i class="bi bi-robot"></i> Agent
+        </span>
+        <small class="text-light d-none d-md-inline" id="server-time"></small>
+    </div>
+</nav>
+
+<div class="d-flex" style="margin-top:56px">
+    <!-- 左侧导航栏 - 按业务流重组 -->
+    <nav class="sidebar bg-dark text-white d-flex flex-column p-2"
+         style="width:200px;min-height:calc(100vh - 56px);flex-shrink:0;position:sticky;top:56px;height:calc(100vh - 56px);overflow-y:auto">
+        <ul class="nav nav-pills flex-column gap-1 mt-1">
+
+            <!-- 1. 交易流程 -->
+            <li class="nav-item">
+                <a href="/" class="nav-link text-white {% if page=='dashboard' %}active{% endif %}">
+                    <i class="bi bi-speedometer2 me-2"></i><span>📊 总览</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/trading" class="nav-link text-white {% if page=='trading' %}active{% endif %}">
+                    <i class="bi bi-shop me-2"></i><span>🛒 交易中心</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/selection" class="nav-link text-white {% if page=='selection' %}active{% endif %}">
+                    <i class="bi bi-stars me-2"></i><span>🎯 选股中心</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/sync" class="nav-link text-white {% if page=='sync' %}active{% endif %}">
+                    <i class="bi bi-arrow-repeat me-2"></i><span>🔄 数据同步</span>
+                </a>
+            </li>
+
+            <!-- 市场研究折叠菜单（精简：个股/新闻/板块保留独立页，其余整合到选股中心） -->
+            <li class="nav-item">
+                <a href="#" class="nav-link text-white dropdown-toggle {% if page in ['pool','analyze','news','sectors'] %}active{% endif %}"
+                   data-bs-toggle="collapse" data-bs-target="#market-menu"
+                   onclick="event.preventDefault()">
+                    <i class="bi bi-newspaper me-2"></i><span>📰 市场研究</span>
+                </a>
+                <div class="collapse show" id="market-menu">
+                    <ul class="nav-pills flex-column gap-1 ps-3">
+                        <li class="nav-item"><a href="/pool" class="nav-link text-white {% if page=='pool' %}active{% endif %}"><i class="bi bi-collection me-2"></i>股票池</a></li>
+                        <li class="nav-item"><a href="/analyze" class="nav-link text-white {% if page=='analyze' %}active{% endif %}"><i class="bi bi-search me-2"></i>个股分析</a></li>
+                        <li class="nav-item"><a href="/news" class="nav-link text-white {% if page=='news' %}active{% endif %}"><i class="bi bi-newspaper me-2"></i>新闻舆情</a></li>
+                        <li class="nav-item"><a href="/sectors" class="nav-link text-white {% if page=='sectors' %}active{% endif %}"><i class="bi bi-pie-chart me-2"></i>板块管理</a></li>
+                        <li class="nav-item"><a href="/selection" class="nav-link text-white {% if page=='selection' %}active{% endif %}"><i class="bi bi-graph-up-arrow me-2"></i>ETF/可转债</a></li>
+                    </ul>
+                </div>
+            </li>
+
+            <!-- 分隔线 -->
+            <li class="nav-item mt-2">
+                <div class="px-2 py-1" style="font-size:0.6rem;color:#6c757d;text-transform:uppercase;letter-spacing:.08em;border-top:1px solid #333;padding-top:8px">量化工具</div>
+            </li>
+
+            <li class="nav-item">
+                <a href="/agent" class="nav-link text-white {% if page=='agent' %}active{% endif %}">
+                    <i class="bi bi-robot me-2"></i><span>🤖 Multi-Agent</span>
+                </a>
+            </li>
+
+            <!-- 分隔线 -->
+            <li class="nav-item mt-2">
+                <div class="px-2 py-1" style="font-size:0.6rem;color:#6c757d;text-transform:uppercase;letter-spacing:.08em;border-top:1px solid #333;padding-top:8px">系统管理</div>
+            </li>
+
+            <li class="nav-item">
+                <a href="/data_source" class="nav-link text-white {% if page=='data_source' %}active{% endif %}">
+                    <i class="bi bi-cloud me-2"></i><span>☁️ 数据源</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/data_center" class="nav-link text-white {% if page=='data_center' %}active{% endif %}">
+                    <i class="bi bi-database me-2"></i><span>💾 数据中心</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/config" class="nav-link text-white {% if page=='config' %}active{% endif %}">
+                    <i class="bi bi-gear me-2"></i><span>⚙️ 系统配置</span>
+                </a>
+            </li>
+            <li class="nav-item">
+                <a href="/logs" class="nav-link text-white {% if page=='logs' %}active{% endif %}">
+                    <i class="bi bi-terminal me-2"></i><span>📋 日志查看</span>
+                </a>
+            </li>
+
+        </ul>
+
+        <!-- 底部服务器信息 -->
+        <div class="mt-auto p-2 text-muted small border-top border-secondary">
+            <div><i class="bi bi-server me-1"></i>生产: 192.168.3.22</div>
+            <div><i class="bi bi-database me-1"></i>DB: 192.168.3.41</div>
+        </div>
+    </nav>
+
+    <!-- 主内容区域 -->
+    <main class="flex-grow-1 p-3 p-md-4" style="min-width:0;background:#f8f9fa;min-height:calc(100vh - 56px)">
+        {% block content %}{% endblock %}
+    </main>
+</div>
+
+<script src="/static/bootstrap.bundle.min.js"></script>
+<script src="/static/app.js"></script>
+<script>
+// 实时时钟
+setInterval(() => {
+    const el = document.getElementById('server-time');
+    if (el) el.textContent = new Date().toLocaleString('zh-CN', {
+        month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+    });
+}, 1000);
+
+// 系统状态轮询（30秒一次）
+async function pollStatus() {
+    try {
+        const d = await API.get('/api/status');
+        const dbBadge = document.getElementById('db-badge');
+        const llmBadge = document.getElementById('llm-badge');
+        if (dbBadge) {
+            dbBadge.className = d.db_ok ? 'badge bg-success' : 'badge bg-danger';
+            dbBadge.innerHTML = d.db_ok
+                ? '<i class="bi bi-database-check me-1"></i>DB'
+                : '<i class="bi bi-database-x me-1"></i>DB';
+            dbBadge.title = d.db_ok ? `数据库正常，最新数据：${d.latest_date}` : '数据库连接失败';
+        }
+        if (llmBadge) {
+            llmBadge.className = d.llm_ok ? 'badge bg-info' : 'badge bg-warning text-dark';
+            llmBadge.innerHTML = d.llm_ok
+                ? `<i class="bi bi-cpu me-1"></i>${d.llm_provider}`
+                : '<i class="bi bi-cpu me-1"></i>LLM离线';
+        }
+    } catch (e) {
+        const dbBadge = document.getElementById('db-badge');
+        if (dbBadge) { dbBadge.className = 'badge bg-danger'; dbBadge.textContent = 'DB?'; }
+    }
+    try {
+        const ag = await API.get('/api/agent/status');
+        const agentBadge = document.getElementById('agent-badge');
+        if (agentBadge) {
+            const acc = ag.account || {};
+            if (!acc.error && acc.total_assets > 0) {
+                const pnl = acc.profit_pct || 0;
+                const sign = pnl >= 0 ? '+' : '';
+                agentBadge.className = pnl >= 0 ? 'badge bg-danger' : 'badge bg-success';
+                agentBadge.innerHTML = `<i class="bi bi-robot me-1"></i>${sign}${pnl.toFixed(1)}%`;
+                agentBadge.title = `Agent模拟账户  总资产 ${(acc.total_assets/10000).toFixed(1)}万  累计盈亏 ${sign}${pnl.toFixed(2)}%`;
+            } else {
+                agentBadge.className = 'badge bg-secondary';
+                agentBadge.innerHTML = '<i class="bi bi-robot me-1"></i>Agent';
+                agentBadge.title = 'Agent未初始化';
+            }
+        }
+    } catch (e) { /* Agent badge 非关键，静默失败 */ }
+}
+pollStatus();
+setInterval(pollStatus, 30000);
+</script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,517 @@
+{% extends "base.html" %}
+{% block title %}Agent策略回顾{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-journal-text me-2 text-primary"></i>Agent策略回顾</h5>
+    <div class="d-flex align-items-center gap-2">
+        <select class="form-select form-select-sm" id="days-select" onchange="loadAll()" style="width:90px">
+            <option value="30">近30天</option>
+            <option value="60" selected>近60天</option>
+            <option value="90">近90天</option>
+            <option value="180">近半年</option>
+        </select>
+        <small class="text-muted" id="last-refresh-time"></small>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadAll()">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+    </div>
+</div>
+
+<!-- Toast -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+    <div id="main-toast" class="toast align-items-center border-0" role="alert">
+        <div class="d-flex">
+            <div class="toast-body" id="toast-body">操作完成</div>
+            <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<!-- 绩效汇总 -->
+<div class="row g-2 mb-3" id="perf-cards">
+    <div class="col-6 col-md">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-2 text-center">
+                <div class="text-muted" style="font-size:.72rem">累计收益</div>
+                <div class="fw-bold fs-6" id="perf-total-return">--</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-2 text-center">
+                <div class="text-muted" style="font-size:.72rem">实现盈亏</div>
+                <div class="fw-bold fs-6" id="perf-realized">--</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-2 text-center">
+                <div class="text-muted" style="font-size:.72rem">持仓浮盈</div>
+                <div class="fw-bold fs-6" id="perf-unrealized">--</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-2 text-center">
+                <div class="text-muted" style="font-size:.72rem">交易胜率</div>
+                <div class="fw-bold fs-6" id="perf-win-rate">--</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-2 text-center">
+                <div class="text-muted" style="font-size:.72rem">平均持仓天</div>
+                <div class="fw-bold fs-6" id="perf-hold-days">--</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-2 text-center">
+                <div class="text-muted" style="font-size:.72rem">最大回撤</div>
+                <div class="fw-bold fs-6 text-danger" id="perf-max-dd">--</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tabs -->
+<ul class="nav nav-tabs mb-0" id="review-tabs">
+    <li class="nav-item">
+        <a class="nav-link active" href="#" onclick="switchTab('trades',this)">
+            <i class="bi bi-list-ul me-1"></i>交易明细
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="#" onclick="switchTab('decisions',this)">
+            <i class="bi bi-cpu me-1"></i>决策追踪
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="#" onclick="switchTab('reviews',this)">
+            <i class="bi bi-file-text me-1"></i>日度复盘
+        </a>
+    </li>
+</ul>
+
+<div class="card border-0 shadow-sm" style="border-top-left-radius:0;border-top-right-radius:0">
+    <div class="card-body p-0">
+
+        <!-- Tab 1: 交易明细 -->
+        <div id="tab-trades" class="tab-pane p-3">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <small class="text-muted">每笔买入配对最近的卖出，计算实现盈亏；持仓中为当前浮盈</small>
+                <div class="d-flex gap-2">
+                    <select class="form-select form-select-sm" id="trade-filter" onchange="renderTradeTable()" style="width:110px">
+                        <option value="all">全部</option>
+                        <option value="closed">已平仓</option>
+                        <option value="open">持仓中</option>
+                    </select>
+                </div>
+            </div>
+            <div id="trade-table-wrap" style="overflow-x:auto;max-height:520px;overflow-y:auto">
+                <div class="text-center text-muted py-4">
+                    <span class="spinner-border spinner-border-sm me-1"></span> 加载中...
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 2: 决策追踪 -->
+        <div id="tab-decisions" class="tab-pane d-none p-3">
+            <div class="mb-2">
+                <small class="text-muted">每次盘前决策的买卖计划，及买入标的相对入场价的现价涨跌</small>
+            </div>
+            <div id="decision-list">
+                <div class="text-center text-muted py-4">
+                    <span class="spinner-border spinner-border-sm me-1"></span> 加载中...
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab 3: 日度复盘 -->
+        <div id="tab-reviews" class="tab-pane d-none">
+            <div class="row g-0" style="min-height:460px">
+                <!-- 左：日期列表 -->
+                <div class="col-12 col-md-3 border-end">
+                    <div class="p-2 border-bottom d-flex justify-content-between align-items-center">
+                        <span class="fw-semibold small">复盘日历</span>
+                        <button class="btn btn-outline-primary btn-sm" onclick="triggerTodayReview(this)">
+                            <i class="bi bi-play-circle me-1"></i>生成今日
+                        </button>
+                    </div>
+                    <div id="review-list" style="max-height:480px;overflow-y:auto">
+                        <div class="text-center text-muted py-4">
+                            <span class="spinner-border spinner-border-sm me-1"></span>
+                        </div>
+                    </div>
+                </div>
+                <!-- 右：详情 -->
+                <div class="col-12 col-md-9 p-3">
+                    <div id="review-detail-placeholder" class="text-center text-muted py-5">
+                        <i class="bi bi-hand-index-thumb fs-3 d-block mb-2"></i>
+                        在左侧选择日期
+                    </div>
+                    <div id="review-detail" class="d-none">
+                        <div class="row g-2 mb-3">
+                            <div class="col-6">
+                                <div class="border rounded p-2 text-center">
+                                    <div class="text-muted small">当日盈亏</div>
+                                    <div class="fw-bold fs-6" id="rd-pnl">--</div>
+                                </div>
+                            </div>
+                            <div class="col-6">
+                                <div class="border rounded p-2 text-center">
+                                    <div class="text-muted small">盈亏%</div>
+                                    <div class="fw-bold fs-6" id="rd-pnl-pct">--</div>
+                                </div>
+                            </div>
+                        </div>
+                        <pre id="rd-text"
+                             style="white-space:pre-wrap;background:#f8f9fa;border:1px solid #dee2e6;border-radius:6px;padding:12px;font-size:0.82rem;line-height:1.7;max-height:380px;overflow-y:auto;color:#212529">（暂无内容）</pre>
+                        <div class="d-flex justify-content-between align-items-center mt-2">
+                            <small class="text-muted" id="rd-created-at"></small>
+                            <button class="btn btn-outline-secondary btn-sm" id="btn-regen"
+                                    onclick="regenReview(this)">
+                                <i class="bi bi-arrow-repeat me-1"></i>重新生成
+                            </button>
+                        </div>
+                    </div>
+                    <div id="review-detail-empty" class="d-none text-center text-muted py-5">
+                        <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                        该日期暂无复盘记录
+                        <div class="mt-2">
+                            <button class="btn btn-primary btn-sm" id="btn-gen-empty" onclick="regenReview(this)">
+                                <i class="bi bi-play-circle me-1"></i>立即生成
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _trades = [];
+let _selectedDate = null;
+let _pollTimer = null;
+let _decisionsLoaded = false;
+let _reviewsLoaded = false;
+
+function showToast(type, msg) {
+    const t = document.getElementById('main-toast');
+    t.className = `toast align-items-center text-bg-${type} border-0`;
+    document.getElementById('toast-body').textContent = msg;
+    new bootstrap.Toast(t, { delay: 3500 }).show();
+}
+
+function fmtMoney(v) {
+    if (v == null) return '--';
+    const sign = v >= 0 ? '+' : '';
+    if (Math.abs(v) >= 10000) return sign + (v / 10000).toFixed(2) + '万';
+    return sign + Number(v).toFixed(0) + '元';
+}
+function fmtPct(v) {
+    if (v == null) return '--';
+    return (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%';
+}
+function colorPct(v) { return v >= 0 ? 'text-danger' : 'text-success'; }  // 涨红跌绿
+
+function switchTab(name, el) {
+    document.querySelectorAll('#review-tabs .nav-link').forEach(l => l.classList.remove('active'));
+    el.classList.add('active');
+    document.querySelectorAll('.tab-pane').forEach(p => p.classList.add('d-none'));
+    document.getElementById('tab-' + name).classList.remove('d-none');
+    // 懒加载
+    if (name === 'decisions' && !_decisionsLoaded) loadDecisions();
+    if (name === 'reviews' && !_reviewsLoaded) loadReviewList();
+    return false;
+}
+
+// ─── Tab 1: 交易明细 ───────────────────────────────────────────────────────
+async function loadTradeHistory() {
+    const days = document.getElementById('days-select').value;
+    document.getElementById('trade-table-wrap').innerHTML =
+        '<div class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm me-1"></span> 计算中...</div>';
+    try {
+        const d = await API.get(`/api/agent/trade_history?days=${days}`);
+        _trades = d.trades || [];
+        const s = d.stats || {};
+
+        // 更新绩效卡片
+        const setCard = (id, val, colorFn) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.textContent = val;
+            if (colorFn) el.className = 'fw-bold fs-6 ' + colorFn;
+        };
+        try {
+            const perf = await API.get('/api/agent/performance');
+            setCard('perf-total-return', fmtPct(perf.total_return_pct),
+                    (perf.total_return_pct || 0) >= 0 ? 'text-danger' : 'text-success');
+            setCard('perf-max-dd', '-' + (perf.max_drawdown || 0).toFixed(2) + '%', 'text-danger');
+        } catch (e) {}
+        setCard('perf-realized', fmtMoney(s.total_realized_pnl),
+                (s.total_realized_pnl || 0) >= 0 ? 'text-danger' : 'text-success');
+        setCard('perf-unrealized', fmtMoney(s.total_unrealized_pnl),
+                (s.total_unrealized_pnl || 0) >= 0 ? 'text-danger' : 'text-success');
+        setCard('perf-win-rate',
+                `${s.win_trades || 0}/${s.total_trades || 0} (${s.win_rate || 0}%)`, '');
+        setCard('perf-hold-days', (s.avg_hold_days || 0) + '天', '');
+
+        renderTradeTable();
+    } catch (e) {
+        document.getElementById('trade-table-wrap').innerHTML =
+            `<div class="text-center text-danger py-3">加载失败: ${e.message}</div>`;
+    }
+}
+
+function renderTradeTable() {
+    const filter = document.getElementById('trade-filter').value;
+    const rows = filter === 'all' ? _trades :
+                 _trades.filter(t => t.status === filter);
+
+    if (rows.length === 0) {
+        document.getElementById('trade-table-wrap').innerHTML =
+            '<div class="text-center text-muted py-4"><i class="bi bi-inbox d-block fs-3 mb-1"></i>暂无交易记录</div>';
+        return;
+    }
+
+    const tbody = rows.map(t => {
+        const pnlClass = t.profit >= 0 ? 'text-danger' : 'text-success';
+        const statusBadge = t.status === 'open'
+            ? '<span class="badge bg-warning text-dark">持仓中</span>'
+            : `<span class="badge ${t.profit >= 0 ? 'bg-danger' : 'bg-success'}">已平仓</span>`;
+        const sellDate = t.sell_date || '--';
+        return `<tr>
+            <td class="text-nowrap">${t.ts_code.substring(0,6)}<br><small class="text-muted">${t.name||''}</small></td>
+            <td class="text-nowrap small">${t.buy_date}</td>
+            <td class="text-nowrap small">${sellDate}</td>
+            <td class="text-end">${t.buy_price}</td>
+            <td class="text-end">${t.sell_price}</td>
+            <td class="text-end ${pnlClass} fw-semibold">${fmtPct(t.profit_pct)}</td>
+            <td class="text-end ${pnlClass}">${fmtMoney(t.profit)}</td>
+            <td class="text-center">${t.hold_days}天</td>
+            <td class="text-center">${statusBadge}</td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('trade-table-wrap').innerHTML = `
+        <table class="table table-sm table-hover mb-0 align-middle">
+            <thead class="table-light sticky-top">
+                <tr>
+                    <th>股票</th><th>买入日</th><th>卖出日</th>
+                    <th class="text-end">买价</th><th class="text-end">卖价/现价</th>
+                    <th class="text-end">涨跌%</th><th class="text-end">盈亏</th>
+                    <th class="text-center">持仓天</th><th class="text-center">状态</th>
+                </tr>
+            </thead>
+            <tbody>${tbody}</tbody>
+        </table>`;
+}
+
+// ─── Tab 2: 决策追踪 ──────────────────────────────────────────────────────
+async function loadDecisions() {
+    _decisionsLoaded = true;
+    const days = document.getElementById('days-select').value;
+    document.getElementById('decision-list').innerHTML =
+        '<div class="text-center text-muted py-4"><span class="spinner-border spinner-border-sm me-1"></span> 加载中...</div>';
+    try {
+        const d = await API.get(`/api/agent/decision_stats?days=${days}`);
+        const decisions = d.decisions || [];
+        if (decisions.length === 0) {
+            document.getElementById('decision-list').innerHTML =
+                '<div class="text-center text-muted py-4"><i class="bi bi-inbox d-block fs-3 mb-1"></i>暂无决策记录</div>';
+            return;
+        }
+
+        const regimeBadge = r => {
+            const m = {'bull':'bg-danger','bear':'bg-success','neutral':'bg-secondary'};
+            const zh = {'bull':'多头','bear':'空头','neutral':'震荡'};
+            return `<span class="badge ${m[r]||'bg-secondary'}">${zh[r]||r}</span>`;
+        };
+        const actionBadge = a => {
+            const m = {'buy':'bg-danger','sell':'bg-success','reduce':'bg-warning text-dark','hold':'bg-secondary'};
+            const zh = {'buy':'买入','sell':'卖出','reduce':'减仓','hold':'持有'};
+            return `<span class="badge ${m[a]||'bg-light text-dark'}" style="font-size:.7rem">${zh[a]||a}</span>`;
+        };
+
+        const html = decisions.map(dec => {
+            const tradeRows = dec.trades.map(t => {
+                const out = t.outcome_pct != null
+                    ? `<span class="${t.outcome_pct >= 0 ? 'text-danger' : 'text-success'} fw-semibold">${fmtPct(t.outcome_pct)}</span>`
+                    : '<span class="text-muted">--</span>';
+                const entry = t.entry_price > 0 ? t.entry_price.toFixed(2) : '--';
+                const trackLabel = {'sector_rotation':'A轨','value':'B轨','dividend':'B轨','both':'AB轨'}[t.track] || t.track || '';
+                return `<tr style="font-size:.8rem">
+                    <td>${actionBadge(t.action)}</td>
+                    <td class="text-nowrap">${t.ts_code.substring(0,6)} ${t.name}</td>
+                    <td class="text-muted">${trackLabel}</td>
+                    <td class="text-end">${entry}</td>
+                    <td class="text-end">${out}</td>
+                    <td class="text-muted small" style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${t.reason||''}</td>
+                </tr>`;
+            }).join('');
+
+            return `<div class="border rounded mb-2 overflow-hidden">
+                <div class="d-flex align-items-center gap-2 px-3 py-2 bg-light border-bottom" style="font-size:.85rem">
+                    <span class="fw-semibold">${dec.trade_date}</span>
+                    ${regimeBadge(dec.market_regime)}
+                    <span class="text-muted">信心${(dec.confidence*100).toFixed(0)}%</span>
+                    <span class="ms-auto">
+                        <span class="badge bg-danger bg-opacity-75">买${dec.buy_count}</span>
+                        <span class="badge bg-success bg-opacity-75 ms-1">卖${dec.sell_count}</span>
+                        <span class="badge bg-secondary bg-opacity-75 ms-1">持${dec.hold_count}</span>
+                    </span>
+                </div>
+                ${dec.reasoning ? `<div class="px-3 py-1 text-muted small border-bottom" style="font-size:.78rem">${dec.reasoning}</div>` : ''}
+                ${dec.trades.length > 0 ? `
+                <div class="px-3 py-1" style="overflow-x:auto">
+                    <table class="table table-sm mb-0 align-middle">
+                        <thead><tr style="font-size:.75rem">
+                            <th>操作</th><th>股票</th><th>轨道</th>
+                            <th class="text-end">入场价</th><th class="text-end">现价涨跌</th>
+                            <th>理由</th>
+                        </tr></thead>
+                        <tbody>${tradeRows}</tbody>
+                    </table>
+                </div>` : '<div class="px-3 py-2 text-muted small">无交易指令（保持现有持仓）</div>'}
+            </div>`;
+        }).join('');
+
+        document.getElementById('decision-list').innerHTML = html;
+    } catch (e) {
+        document.getElementById('decision-list').innerHTML =
+            `<div class="text-center text-danger py-3">加载失败: ${e.message}</div>`;
+    }
+}
+
+// ─── Tab 3: 日度复盘 ──────────────────────────────────────────────────────
+async function loadReviewList() {
+    _reviewsLoaded = true;
+    const days = document.getElementById('days-select').value;
+    const listEl = document.getElementById('review-list');
+    listEl.innerHTML = '<div class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-1"></span></div>';
+    try {
+        const d = await API.get(`/api/agent/reviews?days=${days}`);
+        const reviews = d.reviews || [];
+        if (reviews.length === 0) {
+            listEl.innerHTML = '<div class="text-center text-muted py-4 small">暂无复盘记录</div>';
+            return;
+        }
+        listEl.innerHTML = reviews.map(r => {
+            const pnlClass = r.pnl_pct >= 0 ? 'text-danger' : 'text-success';
+            const sel = _selectedDate === r.trade_date ? 'bg-primary bg-opacity-10 border-start border-primary border-3' : '';
+            return `<div class="review-item px-3 py-2 border-bottom ${sel}"
+                        style="cursor:pointer" onclick="selectReviewDate('${r.trade_date}',this)">
+                <div class="d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold small">${r.trade_date}</span>
+                    <span class="badge ${r.pnl_pct >= 0 ? 'bg-danger' : 'bg-success'}" style="font-size:.7rem">
+                        ${r.pnl_pct >= 0 ? '+' : ''}${r.pnl_pct.toFixed(2)}%
+                    </span>
+                </div>
+                <div class="small ${pnlClass}">${fmtMoney(r.total_pnl)}</div>
+            </div>`;
+        }).join('');
+    } catch (e) {
+        listEl.innerHTML = `<div class="text-center text-danger py-3 small">加载失败</div>`;
+    }
+}
+
+async function selectReviewDate(date, rowEl) {
+    _selectedDate = date;
+    document.querySelectorAll('.review-item').forEach(el =>
+        el.classList.remove('bg-primary', 'bg-opacity-10', 'border-start', 'border-primary', 'border-3'));
+    if (rowEl) rowEl.classList.add('bg-primary', 'bg-opacity-10', 'border-start', 'border-primary', 'border-3');
+
+    document.getElementById('review-detail-placeholder').classList.add('d-none');
+    document.getElementById('review-detail').classList.add('d-none');
+    document.getElementById('review-detail-empty').classList.add('d-none');
+
+    try {
+        const d = await API.get(`/api/agent/reviews/${date}`);
+        if (!d.review) {
+            document.getElementById('btn-gen-empty').dataset.date = date;
+            document.getElementById('review-detail-empty').classList.remove('d-none');
+            return;
+        }
+        const r = d.review;
+        document.getElementById('rd-pnl').textContent = fmtMoney(r.total_pnl);
+        document.getElementById('rd-pnl').className = 'fw-bold fs-6 ' + (r.total_pnl >= 0 ? 'text-danger' : 'text-success');
+        document.getElementById('rd-pnl-pct').textContent = fmtPct(r.pnl_pct);
+        document.getElementById('rd-pnl-pct').className = 'fw-bold fs-6 ' + (r.pnl_pct >= 0 ? 'text-danger' : 'text-success');
+        document.getElementById('rd-text').textContent = r.review_text || '（暂无内容）';
+        document.getElementById('rd-created-at').textContent = '生成于: ' + (r.created_at || '--');
+        document.getElementById('btn-regen').dataset.date = date;
+        document.getElementById('review-detail').classList.remove('d-none');
+    } catch (e) {
+        document.getElementById('review-detail-placeholder').classList.remove('d-none');
+        document.getElementById('review-detail-placeholder').innerHTML =
+            `<i class="bi bi-exclamation-circle text-danger fs-3 d-block mb-2"></i>加载失败: ${e.message}`;
+    }
+}
+
+async function regenReview(btnEl) {
+    const date = btnEl.dataset.date || _selectedDate;
+    if (!date) { showToast('warning', '请先选择日期'); return; }
+    const orig = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>生成中...';
+    try {
+        const r = await API.post(`/api/agent/reviews/generate/${date}`);
+        if (r.error) { showToast('danger', r.error); btnEl.disabled=false; btnEl.innerHTML=orig; return; }
+        showToast('info', `复盘任务 ${r.job_id} 已启动...`);
+        let tries = 0;
+        _pollTimer = setInterval(async () => {
+            tries++;
+            try {
+                const s = await API.get(`/api/agent/job/${r.job_id}`);
+                if (s.status === 'done') {
+                    clearInterval(_pollTimer);
+                    showToast('success', `${date} 复盘生成完成`);
+                    btnEl.disabled=false; btnEl.innerHTML=orig;
+                    selectReviewDate(date, null);
+                    loadReviewList();
+                } else if (s.status === 'error' || tries >= 90) {
+                    clearInterval(_pollTimer);
+                    showToast(s.status==='error' ? 'danger' : 'warning',
+                              s.status==='error' ? ('失败: '+(s.error||'未知')) : '生成超时');
+                    btnEl.disabled=false; btnEl.innerHTML=orig;
+                }
+            } catch(e) { if(tries>=90){ clearInterval(_pollTimer); btnEl.disabled=false; btnEl.innerHTML=orig; } }
+        }, 2000);
+    } catch(e) {
+        showToast('danger', '请求失败: ' + e.message);
+        btnEl.disabled=false; btnEl.innerHTML=orig;
+    }
+}
+
+async function triggerTodayReview(btnEl) {
+    const today = new Date().toISOString().slice(0, 10);
+    btnEl.dataset.date = today;
+    await regenReview(btnEl);
+}
+
+async function loadAll() {
+    document.getElementById('last-refresh-time').textContent = '刷新于 ' + new Date().toLocaleTimeString('zh-CN');
+    _decisionsLoaded = false;
+    _reviewsLoaded = false;
+    // 当前激活 tab
+    const activeTab = document.querySelector('#review-tabs .nav-link.active');
+    const tabName = activeTab?.getAttribute('onclick')?.match(/'(\w+)'/)?.[1] || 'trades';
+    await loadTradeHistory();
+    if (tabName === 'decisions') loadDecisions();
+    if (tabName === 'reviews') loadReviewList();
+}
+
+loadAll();
+</script>
+{% endblock %}

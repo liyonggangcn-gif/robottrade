@@ -1,0 +1,281 @@
+{% extends "base.html" %}
+{% block title %}交易执行{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-currency-exchange me-2 text-success"></i>交易执行</h5>
+    <div>
+        <span class="badge bg-light text-dark me-2">
+            <i class="bi bi-wallet2 me-1"></i>可用资金: {{ available_cash }}元
+        </span>
+        <button class="btn btn-outline-secondary btn-sm" onclick="refreshExecution()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<!-- 账户概览 -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card stat-card primary h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-cash me-1"></i>总资产</div>
+                <div class="fw-bold fs-5">{{ total_assets }}元</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card success h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-wallet2 me-1"></i>可用资金</div>
+                <div class="fw-bold fs-5">{{ available_cash }}元</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card {% if total_pnl >= 0 %}danger{% else %}success{% endif %} h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-graph-up me-1"></i>累计盈亏</div>
+                <div class="fw-bold fs-5 {% if total_pnl >= 0 %}profit{% else %}loss{% endif %}">
+                    {{ "+" if total_pnl >= 0 else "" }}{{ "%.2f"|format(total_pnl) }}%
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card info h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-check-circle me-1"></i>持仓市值</div>
+                <div class="fw-bold fs-5">{{ position_value }}元</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 买入订单 -->
+<div class="card mb-4 border-primary">
+    <div class="card-header bg-primary text-white">
+        <i class="bi bi-arrow-down-circle me-1"></i>
+        <strong>📥 买入订单预览 ({{ buy_orders|length }}只)</strong>
+    </div>
+    <div class="card-body p-0">
+        {% if buy_orders %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>代码</th>
+                        <th>名称</th>
+                        <th>推荐数量</th>
+                        <th>预估金额</th>
+                        <th>评分</th>
+                        <th>理由</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for o in buy_orders %}
+                    <tr>
+                        <td><code>{{ o.ts_code }}</code></td>
+                        <td><strong>{{ o.name }}</strong></td>
+                        <td>{{ o.volume }}股</td>
+                        <td>{{ "%.2f"|format(o.amount) }}元</td>
+                        <td><span class="badge bg-primary">{{ "%.3f"|format(o.score) }}</span></td>
+                        <td><small class="text-muted">{{ o.reason }}</small></td>
+                        <td>
+                            <button class="btn btn-sm btn-primary" onclick="confirmBuy('{{ o.ts_code }}', {{ o.volume }})">
+                                <i class="bi bi-check"></i> 确认
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="card-footer bg-white">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="text-muted">
+                    预计使用资金: <strong>{{ "%.2f"|format(total_buy_amount) }}元</strong>
+                </span>
+                <button class="btn btn-outline-primary btn-sm" onclick="confirmAllBuy()">
+                    <i class="bi bi-check-all"></i> 全部确认买入
+                </button>
+            </div>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+            暂无待买入订单
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 卖出订单 -->
+<div class="card mb-4 border-warning">
+    <div class="card-header bg-warning text-dark">
+        <i class="bi bi-arrow-up-circle me-1"></i>
+        <strong>📤 卖出订单确认 ({{ sell_orders|length }}只)</strong>
+    </div>
+    <div class="card-body p-0">
+        {% if sell_orders %}
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>代码</th>
+                        <th>名称</th>
+                        <th>数量</th>
+                        <th>盈亏</th>
+                        <th>信号</th>
+                        <th>理由</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for o in sell_orders %}
+                    <tr class="{% if o.signal == 'STOP_LOSS' %}table-danger{% elif o.signal == 'TAKE_PROFIT' %}table-warning{% endif %}">
+                        <td><code>{{ o.ts_code }}</code></td>
+                        <td><strong>{{ o.name }}</strong></td>
+                        <td>{{ o.volume }}股</td>
+                        <td class="{% if o.profit_pct >= 0 %}profit{% else %}loss{% endif %}">
+                            {{ "+" if o.profit_pct >= 0 else "" }}{{ "%.1f"|format(o.profit_pct) }}%
+                        </td>
+                        <td>
+                            {% if o.signal == 'STOP_LOSS' %}
+                            <span class="badge bg-danger">止损</span>
+                            {% elif o.signal == 'TAKE_PROFIT' %}
+                            <span class="badge bg-warning text-dark">止盈</span>
+                            {% elif o.signal == 'CIRCUIT_BREAKER' %}
+                            <span class="badge bg-orange text-dark">熔断</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ o.signal }}</span>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ o.reason }}</small></td>
+                        <td>
+                            <button class="btn btn-sm btn-warning" onclick="confirmSell('{{ o.ts_code }}')">
+                                <i class="bi bi-check"></i> 确认卖出
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="text-center text-muted py-4">
+            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+            暂无待确认卖出订单
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<!-- 执行历史 -->
+<div class="card">
+    <div class="card-header bg-white">
+        <i class="bi bi-clock-history me-1 text-info"></i>
+        <strong>📜 执行历史</strong>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>时间</th>
+                        <th>代码</th>
+                        <th>操作</th>
+                        <th>数量</th>
+                        <th>价格</th>
+                        <th>金额</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in history %}
+                    <tr>
+                        <td><small>{{ h.time }}</small></td>
+                        <td><code>{{ h.ts_code }}</code></td>
+                        <td>
+                            <span class="badge {% if h.action == 'BUY' %}bg-primary{% else %}bg-warning text-dark{% endif %}">
+                                {{ h.action }}
+                            </span>
+                        </td>
+                        <td>{{ h.volume }}</td>
+                        <td>{{ "%.2f"|format(h.price) }}</td>
+                        <td>{{ "%.2f"|format(h.amount) }}</td>
+                        <td>
+                            {% if h.status == 'success' %}
+                            <span class="badge bg-success">成功</span>
+                            {% elif h.status == 'failed' %}
+                            <span class="badge bg-danger">失败</span>
+                            {% else %}
+                            <span class="badge bg-secondary">{{ h.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="text-center text-muted py-3">暂无执行记录</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function refreshExecution() {
+    window.location.reload();
+}
+
+async function confirmBuy(tsCode, volume) {
+    if (!confirm(`确认买入 ${tsCode} ${volume}股？`)) return;
+    try {
+        const res = await API.post('/api/execution/buy', { ts_code: tsCode, volume: volume });
+        if (res.success) {
+            alert('买入订单已提交');
+            refreshExecution();
+        } else {
+            alert('操作失败: ' + res.error);
+        }
+    } catch (e) {
+        alert('操作失败: ' + e.message);
+    }
+}
+
+async function confirmAllBuy() {
+    if (!confirm('确认全部买入？')) return;
+    try {
+        const res = await API.post('/api/execution/buy_all', {});
+        if (res.success) {
+            alert('全部买入订单已提交');
+            refreshExecution();
+        } else {
+            alert('操作失败: ' + res.error);
+        }
+    } catch (e) {
+        alert('操作失败: ' + e.message);
+    }
+}
+
+async function confirmSell(tsCode) {
+    if (!confirm(`确认卖出 ${tsCode}？`)) return;
+    try {
+        const res = await API.post('/api/execution/sell', { ts_code: tsCode });
+        if (res.success) {
+            alert('卖出订单已提交');
+            refreshExecution();
+        } else {
+            alert('操作失败: ' + res.error);
+        }
+    } catch (e) {
+        alert('操作失败: ' + e.message);
+    }
+}
+</script>
+{% endblock %}

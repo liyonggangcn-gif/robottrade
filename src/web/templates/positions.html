@@ -1,0 +1,794 @@
+{% extends "base.html" %}
+{% block title %}持仓管理{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex align-items-center gap-2">
+        <h5 class="fw-bold mb-0"><i class="bi bi-briefcase me-2 text-success"></i>持仓管理</h5>
+        <a href="/risk" class="btn btn-sm btn-outline-warning"><i class="bi bi-shield-check me-1"></i>风控评估</a>
+    </div>
+    <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-info" onclick="syncFromQmt()" id="btn-sync-qmt">
+            <i class="bi bi-cloud-download me-1"></i>同步QMT持仓
+        </button>
+        <button class="btn btn-sm btn-outline-success" onclick="syncToPool()" id="btn-sync-pool">
+            <i class="bi bi-arrow-up-circle me-1"></i>同步到股票池
+        </button>
+        <button class="btn btn-sm btn-outline-warning" onclick="refreshPrices()" id="btn-refresh-prices">
+            <i class="bi bi-currency-dollar me-1"></i>刷新价格
+        </button>
+        <button class="btn btn-sm btn-outline-primary" onclick="loadAll()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
+</div>
+
+<!-- 账户概况卡片 -->
+<div class="row g-3 mb-4" id="summary-cards">
+    <div class="col-6 col-md-3">
+        <div class="card stat-card primary h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-cash-stack me-1"></i>总资金</div>
+                <div class="fw-bold fs-5" id="s-total">—</div>
+                <div class="text-muted small">账户总值</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card success h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-graph-up me-1"></i>持仓市值</div>
+                <div class="fw-bold fs-5" id="s-market">—</div>
+                <div class="text-muted small" id="s-stock-count">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card warning h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-wallet me-1"></i>可用现金</div>
+                <div class="fw-bold fs-5" id="s-cash">—</div>
+                <div class="text-muted small" id="s-cash-pct">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card danger h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-bar-chart me-1"></i>总盈亏</div>
+                <div class="fw-bold fs-5" id="s-pnl">—</div>
+                <div class="text-muted small" id="s-pnl-pct">—</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 标签页 -->
+<ul class="nav nav-tabs mb-3" id="positionsTabs">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-positions">
+            <i class="bi bi-list-ul me-1"></i>股票持仓
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-etf" onclick="loadEtfData()">
+            <i class="bi bi-graph-up-arrow me-1"></i>ETF持仓
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-cb" onclick="loadCbData()">
+            <i class="bi bi-file-earmark-text me-1"></i>可转债持仓
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-sell-signals">
+            <i class="bi bi-exclamation-diamond me-1"></i>卖出信号
+            <span class="badge bg-danger ms-1" id="badge-sell-signals" style="display:none"></span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-alerts" onclick="loadRiskData()">
+            <i class="bi bi-exclamation-triangle me-1"></i>风险预警
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-transactions">
+            <i class="bi bi-receipt me-1"></i>交易历史
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-phase1">
+            <i class="bi bi-plus-circle me-1"></i>加仓候选
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- 持仓明细 -->
+    <div class="tab-pane fade show active" id="tab-positions">
+        <div class="card">
+            <div class="card-body p-0" id="positions-container">
+                <div class="text-center py-5 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- V2 卖出信号 -->
+    <div class="tab-pane fade" id="tab-sell-signals">
+        <div class="card">
+            <div class="card-header bg-white">
+                <i class="bi bi-exclamation-diamond me-1 text-danger"></i>V2 智能卖出信号
+                <small class="text-muted ms-2">3类：价格止损 / 估值过高 / 盈利逻辑破坏</small>
+            </div>
+            <div class="card-body p-0" id="sell-signals-container">
+                <div class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 加仓候选 -->
+    <div class="tab-pane fade" id="tab-phase1">
+        <div class="card">
+            <div class="card-header bg-white">
+                <i class="bi bi-plus-circle me-1 text-success"></i>加仓候选（第一期已盈利）
+                <small class="text-muted ms-2">Phase=1 且当前盈利 ≥ 0 的持仓，可考虑补仓</small>
+            </div>
+            <div class="card-body p-0" id="phase1-container">
+                <div class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 风险预警 -->
+    <div class="tab-pane fade" id="tab-alerts">
+        <div class="card">
+            <div class="card-header bg-white">
+                <i class="bi bi-shield-exclamation me-1 text-warning"></i>止损/止盈预警
+            </div>
+            <div class="card-body" id="alerts-container">
+                <div class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 交易历史 -->
+    <div class="tab-pane fade" id="tab-transactions">
+        <div class="card">
+            <div class="card-body p-0" id="transactions-container">
+                <div class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ETF持仓 -->
+    <div class="tab-pane fade" id="tab-etf">
+        <div class="card mb-3">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-graph-up-arrow me-1"></i><strong>ETF推荐</strong></span>
+                <a href="/etf" class="btn btn-sm btn-outline-secondary"><i class="bi bi-box-arrow-up-right me-1"></i>ETF策略页</a>
+            </div>
+            <div class="card-body p-0" id="etf-picks-container">
+                <div class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>点击加载...
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header bg-white">
+                <i class="bi bi-briefcase me-1"></i>当前ETF组合
+            </div>
+            <div class="card-body p-0" id="etf-holdings-container">
+                <div class="text-center py-4 text-muted small">暂无ETF持仓数据（QMT同步后可见）</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 可转债持仓 -->
+    <div class="tab-pane fade" id="tab-cb">
+        <div class="card mb-3">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-file-earmark-text me-1"></i><strong>可转债推荐</strong></span>
+                <div>
+                    <a href="/cb" class="btn btn-sm btn-outline-secondary me-1"><i class="bi bi-box-arrow-up-right me-1"></i>可转债页</a>
+                    <button class="btn btn-sm btn-primary" onclick="runCbStrategy()"><i class="bi bi-play-fill me-1"></i>运行策略</button>
+                </div>
+            </div>
+            <div class="card-body p-0" id="cb-container">
+                <div class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>点击上方按钮运行可转债策略
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 加载账户摘要
+async function loadSummary() {
+    try {
+        const d = await API.get('/api/positions/summary');
+        if (d.error) {
+            document.getElementById('s-total').textContent = '无数据';
+            return;
+        }
+        document.getElementById('s-total').textContent = formatWan(d.total_value || d.total_assets || 0);
+        document.getElementById('s-market').textContent = formatWan(d.market_value || d.position_value || 0);
+        document.getElementById('s-stock-count').textContent = `${d.stock_count || 0} 只持仓`;
+        document.getElementById('s-cash').textContent = formatWan(d.cash || d.available_cash || 0);
+        const totalVal = d.total_value || d.total_assets || 1;
+        const cash = d.cash || d.available_cash || 0;
+        document.getElementById('s-cash-pct').textContent = `仓位比：${(((totalVal - cash) / totalVal) * 100).toFixed(1)}%`;
+        const pnl = d.total_profit || d.unrealized_pnl || 0;
+        const pnlPct = d.profit_pct || d.return_pct || 0;
+        document.getElementById('s-pnl').innerHTML = formatPnl(pnl, '元');
+        document.getElementById('s-pnl-pct').innerHTML = formatPnl(pnlPct, '%');
+    } catch (e) {
+        document.getElementById('s-total').textContent = '加载失败';
+    }
+}
+
+// 构建目标价进度条
+function buildProgressBar(stop, cost, cur, target) {
+    if (!cur || !stop || !target || target <= stop) return '';
+    const range = target - stop;
+    const stopPct  = 0;
+    const costPct  = Math.min(100, Math.max(0, (cost - stop) / range * 100));
+    const curPct   = Math.min(100, Math.max(0, (cur  - stop) / range * 100));
+    const tgtPct   = 100;
+
+    const upside = ((target - cur) / cur * 100).toFixed(1);
+    const toStop = ((cur - stop) / cur * 100).toFixed(1);
+    const upsideColor = parseFloat(upside) > 0 ? '#198754' : '#dc3545';
+
+    return `
+    <div style="position:relative;height:6px;background:#e9ecef;border-radius:3px;margin:4px 0 2px">
+        <div style="position:absolute;left:0;top:0;height:6px;width:${curPct}%;background:${parseFloat(upside)>0?'#0d6efd':'#dc3545'};border-radius:3px;transition:width .3s"></div>
+        <div style="position:absolute;left:${costPct}%;top:-2px;width:2px;height:10px;background:#6c757d" title="成本 ¥${cost.toFixed(2)}"></div>
+        <div style="position:absolute;left:${tgtPct}%;top:-3px;transform:translateX(-100%);font-size:9px;color:#198754" title="目标价 ¥${target.toFixed(2)}">▲</div>
+    </div>
+    <div class="d-flex justify-content-between" style="font-size:10px">
+        <span class="text-danger">止损 ¥${stop.toFixed(2)}</span>
+        <span style="color:${upsideColor};font-weight:bold">距目标 ${upside > 0 ? '+' : ''}${upside}%</span>
+        <span class="text-success">目标 ¥${target.toFixed(2)}</span>
+    </div>`;
+}
+
+// 加载持仓明细
+async function loadPositions() {
+    const container = document.getElementById('positions-container');
+    container.innerHTML = loadingHTML();
+    try {
+        const d = await API.get('/api/positions');
+        const pos = d.positions || [];
+        if (!pos.length) {
+            container.innerHTML = emptyHTML('当前无持仓');
+            return;
+        }
+        const rows = pos.map(p => {
+            const cost   = parseFloat(p.avg_cost || 0);
+            const cur    = parseFloat(p.current_price || 0);
+            const stop   = parseFloat(p.stop_loss_price || 0) || cost * 0.92;
+            const target = parseFloat(p.target_price || 0) || cost * 1.20;
+            const pnlPct = cost > 0 ? (cur - cost) / cost * 100 : 0;
+            const upside = target > 0 && cur > 0 ? (target - cur) / cur * 100 : 0;
+            const phase  = parseInt(p.buy_phase || 1);
+            const distStop = stop > 0 && cur > 0 ? (cur - stop) / stop * 100 : null;
+
+            const isNearStop   = cur > 0 && cur < stop * 1.02;
+            const isNearTarget = cur > 0 && upside < 5 && upside >= 0;
+            const rowClass = isNearStop ? 'table-danger' : (isNearTarget ? 'table-warning' : '');
+
+            const phaseBadge = phase === 1
+                ? `<span class="badge bg-secondary" style="font-size:10px" title="首仓1/3，盈利5%可加仓">一期</span>`
+                : `<span class="badge bg-success" style="font-size:10px" title="已加至二期">二期</span>`;
+
+            const progressBar = buildProgressBar(stop, cost, cur, target);
+
+            // 估值 badge
+            const VERDICT_STYLE = {
+                '严重低估': 'bg-success text-white',
+                '低估':     'bg-success-subtle text-success border border-success-subtle',
+                '合理':     'bg-light text-secondary border',
+                '高估':     'bg-warning-subtle text-warning-emphasis border border-warning-subtle',
+                '严重高估': 'bg-danger-subtle text-danger border border-danger-subtle',
+                '数据不足': 'bg-light text-muted border',
+            };
+            const verd = p.val_verdict || '';
+            const upPct = p.val_upside_pct != null ? parseFloat(p.val_upside_pct) : null;
+            const verdBadge = verd
+                ? `<span class="badge ${VERDICT_STYLE[verd] || 'bg-light border'}" style="font-size:10px">${verd}</span>`
+                : '<span class="text-muted" style="font-size:10px">—</span>';
+            const upsideText = upPct != null
+                ? `<div style="font-size:10px" class="${upPct >= 0 ? 'text-success' : 'text-danger'}">${upPct >= 0 ? '+' : ''}${upPct.toFixed(1)}%</div>`
+                : '';
+
+            // 健康灯
+            const HEALTH_ICON = { red: '🔴', yellow: '🟡', green: '🟢' };
+            const healthIcon = HEALTH_ICON[p.health_light] || '';
+            const healthTip = p.health_reason ? ` title="${p.health_reason}"` : '';
+
+            return `<tr class="${rowClass}">
+                <td>
+                    <strong>${p.name || ''}</strong>
+                    <div>${phaseBadge}</div>
+                </td>
+                <td>
+                    <code class="small text-primary">${(p.ts_code || '').substring(0,9)}</code>
+                    <div class="text-muted" style="font-size:10px">${p.buy_date || ''}</div>
+                </td>
+                <td class="text-end">${(p.shares || 0).toLocaleString()}</td>
+                <td class="text-end">
+                    <div>¥${cost.toFixed(2)}</div>
+                    <div class="text-muted" style="font-size:10px">现 ¥${cur > 0 ? cur.toFixed(2) : '—'}</div>
+                </td>
+                <td>${cur > 0 ? formatPnl(pnlPct, '%') : '—'}</td>
+                <td class="text-end">
+                    <div style="font-size:11px">¥${stop.toFixed(2)}</div>
+                    <div class="${distStop != null ? (distStop < 5 ? 'text-danger' : distStop < 10 ? 'text-warning' : 'text-success') : ''}" style="font-size:10px">
+                        ${distStop != null ? distStop.toFixed(1) + '%' : ''}
+                    </div>
+                </td>
+                <td>
+                    ${verdBadge}${upsideText}
+                    <div class="text-muted" style="font-size:10px">${p.val_method || ''}</div>
+                </td>
+                <td style="min-width:140px">${progressBar}</td>
+                <td class="text-end text-muted small">
+                    ¥${(parseFloat(p.market_value || 0)).toLocaleString('zh-CN', {maximumFractionDigits:0})}
+                    <div>${p.position_pct ? (parseFloat(p.position_pct)*100).toFixed(1)+'%' : ''}</div>
+                </td>
+                <td class="text-center" style="font-size:16px"${healthTip}>${healthIcon}</td>
+                <td>
+                    <button class="btn btn-xs btn-outline-primary py-0 px-1" style="font-size:11px"
+                        onclick="goAnalyze('${p.ts_code}')">分析</button>
+                </td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover align-middle mb-0">
+                    <thead class="table-light">
+                        <tr>
+                            <th>名称</th><th>代码/日期</th><th class="text-end">数量</th>
+                            <th class="text-end">成本/现价</th><th>盈亏</th>
+                            <th class="text-end">止损价</th>
+                            <th>估值</th>
+                            <th>目标价进度</th>
+                            <th class="text-end">市值/仓位</th><th title="健康灯">健</th><th></th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+        loadAlerts(pos);
+    } catch (e) {
+        container.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+function goAnalyze(tsCode) {
+    window.location.href = `/analyze?code=${tsCode}`;
+}
+
+// 风险预警
+function loadAlerts(positions) {
+    const container = document.getElementById('alerts-container');
+    if (!positions || !positions.length) {
+        container.innerHTML = emptyHTML('无持仓，无预警信息');
+        return;
+    }
+    const alerts = [];
+    positions.forEach(p => {
+        const cost = parseFloat(p.avg_cost || p.cost || 0);
+        const cur = parseFloat(p.current_price || p.price || 0);
+        if (cost <= 0 || cur <= 0) return;
+        const pct = (cur - cost) / cost * 100;
+        const stopLoss = cost * 0.92;
+        const takeProfit = cost * 1.20;
+        if (cur <= stopLoss) {
+            alerts.push({ type: 'danger', name: p.name, code: p.ts_code || p.code, msg: `已触发止损（-8%），当前：¥${cur.toFixed(2)}，止损线：¥${stopLoss.toFixed(2)}`, pct });
+        } else if (cur <= stopLoss * 1.05) {
+            alerts.push({ type: 'warning', name: p.name, code: p.ts_code || p.code, msg: `接近止损线（当前跌幅 ${pct.toFixed(1)}%），止损线：¥${stopLoss.toFixed(2)}`, pct });
+        }
+        if (cur >= takeProfit) {
+            alerts.push({ type: 'success', name: p.name, code: p.ts_code || p.code, msg: `已达止盈目标（+20%），当前：¥${cur.toFixed(2)}，止盈线：¥${takeProfit.toFixed(2)}`, pct });
+        }
+    });
+    if (!alerts.length) {
+        container.innerHTML = '<div class="alert alert-success mb-0"><i class="bi bi-shield-check me-2"></i>所有持仓均在正常范围内，无需处理</div>';
+        return;
+    }
+    const items = alerts.map(a => `
+        <div class="alert alert-${a.type} d-flex align-items-start gap-2 mb-2">
+            <i class="bi bi-${a.type === 'danger' ? 'exclamation-octagon' : a.type === 'warning' ? 'exclamation-triangle' : 'check-circle'} fs-5 mt-1"></i>
+            <div>
+                <strong>${a.name}</strong> <code class="small">${a.code}</code>
+                <div class="small mt-1">${a.msg}</div>
+            </div>
+        </div>`).join('');
+    container.innerHTML = items;
+}
+
+// 从QMT同步真实持仓
+async function syncFromQmt() {
+    const btn = document.getElementById('btn-sync-qmt');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>同步中...';
+    try {
+        const r = await API.post('/api/positions/sync-from-qmt');
+        if (r.ok) {
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>已同步';
+            loadAll();
+            setTimeout(() => {
+                btn.innerHTML = '<i class="bi bi-cloud-download me-1"></i>同步QMT持仓';
+                btn.disabled = false;
+            }, 3000);
+        } else {
+            alert('QMT同步失败: ' + (r.error || '未知'));
+            btn.innerHTML = '<i class="bi bi-cloud-download me-1"></i>同步QMT持仓';
+            btn.disabled = false;
+        }
+    } catch (e) {
+        alert('QMT同步异常: ' + e.message);
+        btn.innerHTML = '<i class="bi bi-cloud-download me-1"></i>同步QMT持仓';
+        btn.disabled = false;
+    }
+}
+
+// 持仓同步到股票池
+async function syncToPool() {
+    const btn = document.getElementById('btn-sync-pool');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>同步中...';
+    try {
+        const d = await API.post('/api/positions/sync', {});
+        if (d.ok) {
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>同步完成';
+            btn.className = 'btn btn-sm btn-success';
+            setTimeout(() => {
+                btn.innerHTML = '<i class="bi bi-arrow-up-circle me-1"></i>同步到股票池';
+                btn.className = 'btn btn-sm btn-outline-success';
+                btn.disabled = false;
+            }, 3000);
+            showToast('success', `已同步：升级${d.upgraded}只 新增${d.added}只 降级${d.downgraded}只`);
+        } else {
+            throw new Error(d.error || '同步失败');
+        }
+    } catch (e) {
+        btn.innerHTML = '<i class="bi bi-x-circle me-1"></i>同步失败';
+        btn.className = 'btn btn-sm btn-danger';
+        btn.disabled = false;
+        showToast('danger', '同步失败：' + e.message);
+    }
+}
+
+// 加载交易历史（分页 + 统计）
+let txPage = 1;
+async function loadTransactions(page) {
+    page = page || txPage;
+    txPage = page;
+    const container = document.getElementById('transactions-container');
+    if (page === 1) container.innerHTML = loadingHTML();
+    try {
+        const d = await API.get(`/api/transactions?page=${page}&page_size=50`);
+        const txns = d.transactions || [];
+        const stats = d.stats || {};
+        const pagi = d.pagination || {};
+        const byStock = d.by_stock || [];
+
+        // 统计卡片
+        const totalPnlColor = (stats.total_pnl || 0) >= 0 ? 'text-success' : 'text-danger';
+        const pnlSign = (stats.total_pnl || 0) >= 0 ? '+' : '';
+        const statsHtml = `
+        <div class="row g-2 p-3 border-bottom">
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">总交易次数</div>
+                <div class="fw-bold">${(stats.buy_cnt || 0) + (stats.sell_cnt || 0)} 次
+                    <span class="text-muted small">（买${stats.buy_cnt || 0}/卖${stats.sell_cnt || 0}）</span>
+                </div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">累计买入</div>
+                <div class="fw-bold">${formatWan(stats.buy_amt || 0)}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">累计卖出</div>
+                <div class="fw-bold">${formatWan(stats.sell_amt || 0)}</div>
+            </div>
+            <div class="col-6 col-md-3">
+                <div class="text-muted small">已实现盈亏 / 胜率</div>
+                <div class="fw-bold ${totalPnlColor}">${pnlSign}${formatWan(stats.total_pnl || 0)}
+                    <span class="text-muted fw-normal small ms-1">${stats.win_rate || 0}%（${stats.win_stocks || 0}/${stats.total_stocks || 0}只）</span>
+                </div>
+            </div>
+        </div>`;
+
+        // 各股盈亏明细（折叠）
+        const byStockRows = byStock.slice(0, 20).map(s => {
+            const pnl = parseFloat(s.realized_pnl || 0);
+            const cl = pnl > 0 ? 'text-success' : pnl < 0 ? 'text-danger' : 'text-muted';
+            const sign = pnl > 0 ? '+' : '';
+            return `<tr>
+                <td><strong>${s.name || ''}</strong></td>
+                <td><code class="small text-primary">${(s.ts_code || '').substring(0, 6)}</code></td>
+                <td class="text-end text-muted small">${s.buy_times || 0}买/${s.sell_times || 0}卖</td>
+                <td class="text-end fw-bold ${cl}">${sign}${formatWan(pnl)}</td>
+            </tr>`;
+        }).join('');
+        const byStockHtml = byStock.length ? `
+        <div class="p-3 border-bottom">
+            <div class="d-flex justify-content-between align-items-center mb-2">
+                <small class="fw-bold text-muted">各股已实现盈亏（前20只）</small>
+                <button class="btn btn-xs btn-link text-muted p-0" data-bs-toggle="collapse" data-bs-target="#by-stock-table">
+                    <i class="bi bi-chevron-down"></i>
+                </button>
+            </div>
+            <div class="collapse show" id="by-stock-table">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>名称</th><th>代码</th><th class="text-end">交易</th><th class="text-end">已实现盈亏</th></tr>
+                        </thead>
+                        <tbody>${byStockRows}</tbody>
+                    </table>
+                </div>
+            </div>
+        </div>` : '';
+
+        // 交易明细
+        if (!txns.length) {
+            container.innerHTML = statsHtml + byStockHtml + emptyHTML('暂无交易记录');
+            return;
+        }
+        const rows = txns.map(t => {
+            const actionBg = t.action === 'BUY' ? 'bg-danger' : 'bg-success';
+            return `<tr>
+                <td class="text-muted small">${t.trade_date || ''}</td>
+                <td><strong>${t.name || ''}</strong></td>
+                <td><code class="small text-primary">${(t.ts_code || '').substring(0, 6)}</code></td>
+                <td><span class="badge ${actionBg}">${t.action || ''}</span></td>
+                <td class="text-end">¥${parseFloat(t.price || 0).toFixed(2)}</td>
+                <td class="text-end">${(t.shares || 0).toLocaleString()}</td>
+                <td class="text-end">${formatWan(t.amount || 0)}</td>
+                <td class="text-muted small">${t.notes || t.strategy || ''}</td>
+            </tr>`;
+        }).join('');
+
+        // 分页
+        const totalPages = pagi.total_pages || 1;
+        const pagiHtml = totalPages > 1 ? `
+        <div class="d-flex justify-content-center align-items-center gap-2 p-3">
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadTransactions(${page-1})" ${page <= 1 ? 'disabled' : ''}>上一页</button>
+            <span class="text-muted small">第 ${page} / ${totalPages} 页，共 ${pagi.total || 0} 条</span>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadTransactions(${page+1})" ${page >= totalPages ? 'disabled' : ''}>下一页</button>
+        </div>` : '';
+
+        container.innerHTML = statsHtml + byStockHtml + `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>日期</th><th>名称</th><th>代码</th><th>操作</th><th class="text-end">价格</th><th class="text-end">数量</th><th class="text-end">金额</th><th>备注</th></tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>` + pagiHtml;
+    } catch (e) {
+        container.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+async function loadSellSignals() {
+    const container = document.getElementById('sell-signals-container');
+    container.innerHTML = loadingHTML();
+    try {
+        const d = await API.get('/api/positions/sell_signals');
+        const signals = d.signals || [];
+        const badge = document.getElementById('badge-sell-signals');
+        if (signals.length) {
+            badge.textContent = signals.length;
+            badge.style.display = '';
+        }
+        if (!signals.length) {
+            container.innerHTML = '<div class="alert alert-success m-3"><i class="bi bi-shield-check me-2"></i>当前无卖出信号</div>';
+            return;
+        }
+        const typeLabels = { stop_loss: '价格止损', valuation_expensive: '估值过高', profit_driver_broken: '盈利逻辑破坏', opportunity_cost: '机会成本' };
+        const typeBg = { stop_loss: 'bg-danger', valuation_expensive: 'bg-warning text-dark', profit_driver_broken: 'bg-primary', opportunity_cost: 'bg-secondary' };
+        const rows = signals.map(s => {
+            const tl = typeLabels[s.signal_type] || s.signal_type || '';
+            const bg = typeBg[s.signal_type] || 'bg-secondary';
+            return `<tr>
+                <td><strong>${s.company_name || s.name || ''}</strong></td>
+                <td><code class="small text-primary">${(s.ts_code || '').substring(0, 6)}</code></td>
+                <td><span class="badge ${bg}">${tl}</span></td>
+                <td class="text-muted small">${s.signal_detail || s.reason || ''}</td>
+                <td class="text-end text-muted small">${s.current_price ? '¥' + parseFloat(s.current_price).toFixed(2) : '—'}</td>
+                <td class="text-end ${parseFloat(s.profit_loss_pct || 0) >= 0 ? 'text-success' : 'text-danger'} small">
+                    ${s.profit_loss_pct != null ? (parseFloat(s.profit_loss_pct) >= 0 ? '+' : '') + parseFloat(s.profit_loss_pct).toFixed(2) + '%' : '—'}
+                </td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `<div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>名称</th><th>代码</th><th>信号类型</th><th>信号详情</th><th class="text-end">现价</th><th class="text-end">盈亏</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+    } catch (e) {
+        container.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+async function loadPhase1() {
+    const container = document.getElementById('phase1-container');
+    container.innerHTML = loadingHTML();
+    try {
+        const d = await API.get('/api/positions/phase1_candidates');
+        const items = d.candidates || [];
+        if (!items.length) {
+            container.innerHTML = '<div class="alert alert-info m-3"><i class="bi bi-info-circle me-2"></i>当前无加仓候选（需有 buy_phase=1 且盈利中的持仓）</div>';
+            return;
+        }
+        const rows = items.map(p => {
+            const pct = parseFloat(p.profit_loss_pct || 0);
+            return `<tr>
+                <td><strong>${p.company_name || p.name || ''}</strong></td>
+                <td><code class="small text-primary">${(p.ts_code || '').substring(0, 6)}</code></td>
+                <td class="text-end text-muted small">${p.shares || 0} 股</td>
+                <td class="text-end text-muted small">¥${parseFloat(p.avg_cost || 0).toFixed(2)}</td>
+                <td class="text-end text-muted small">${p.current_price ? '¥' + parseFloat(p.current_price).toFixed(2) : '—'}</td>
+                <td class="text-end text-success small fw-bold">${pct >= 0 ? '+' : ''}${pct.toFixed(2)}%</td>
+                <td class="text-muted small">${p.buy_date || ''}</td>
+                <td class="text-muted small">${p.strategy || ''}</td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `<div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>名称</th><th>代码</th><th class="text-end">持仓</th><th class="text-end">成本</th><th class="text-end">现价</th><th class="text-end">盈亏</th><th>建仓日</th><th>策略</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+    } catch (e) {
+        container.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+async function refreshPrices() {
+    const btn = document.getElementById('btn-refresh-prices');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>更新中...';
+    try {
+        const r = await API.post('/api/positions/refresh-prices');
+        if (r.ok) {
+            btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>已更新';
+            loadAll();
+            setTimeout(() => {
+                btn.innerHTML = '<i class="bi bi-currency-dollar me-1"></i>刷新价格';
+                btn.disabled = false;
+            }, 3000);
+        } else {
+            alert('价格更新失败: ' + (r.error || '未知'));
+            btn.innerHTML = '<i class="bi bi-currency-dollar me-1"></i>刷新价格';
+            btn.disabled = false;
+        }
+    } catch(e) {
+        alert('请求失败: ' + e.message);
+        btn.innerHTML = '<i class="bi bi-currency-dollar me-1"></i>刷新价格';
+        btn.disabled = false;
+    }
+}
+
+function loadAll() {
+    loadSummary();
+    loadPositions();
+    loadPhase1();
+    // 卖出信号不在这里加载（耗时），仅在切换到该tab时按需加载
+}
+
+// 加载ETF数据
+async function loadEtfData() {
+    const picksEl = document.getElementById('etf-picks-container');
+    const holdEl = document.getElementById('etf-holdings-container');
+    try {
+        const d = await API.get('/api/etf/picks?top_n=10');
+        if (d.picks && d.picks.length > 0) {
+            picksEl.innerHTML = `<div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>代码</th><th>名称</th><th>类型</th><th>评分</th><th>5日收益</th><th>建议</th></tr></thead><tbody>` +
+                d.picks.map(r => `<tr><td><code>${r.code}</code></td><td>${r.name}</td><td><span class="badge bg-secondary">${r.etf_type || 'ETF'}</span></td><td><span class="badge bg-primary">${r.score}</span></td><td class="${r.ret_5d > 0 ? 'text-success' : 'text-danger'}">${r.ret_5d > 0 ? '+' : ''}${r.ret_5d?.toFixed(2) || '-'}%</td><td><span class="badge bg-warning text-dark">${r.advice || '-'}</span></td></tr>`).join('') +
+                '</tbody></table></div>';
+        } else {
+            picksEl.innerHTML = '<div class="text-center py-3 text-muted small">暂无ETF推荐数据</div>';
+        }
+    } catch (e) {
+        picksEl.innerHTML = `<div class="text-danger small p-2">加载失败: ${e.message}</div>`;
+    }
+    try {
+        const d2 = await API.get('/api/etf/qmt');
+        if (d2.holdings && d2.holdings.length > 0) {
+            holdEl.innerHTML = `<div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>代码</th><th>名称</th><th>权重</th><th>仓位</th></tr></thead><tbody>` +
+                d2.holdings.map(r => `<tr><td><code>${r.ts_code}</code></td><td>${r.name || r.ts_code}</td><td>${r.weight != null ? r.weight.toFixed(1) + '%' : '-'}</td><td>${r.position || '-'}</td></tr>`).join('') +
+                '</tbody></table></div>';
+        }
+    } catch (e) {
+        // QMT数据不可用，保持显示默认文字
+    }
+}
+
+// 加载可转债数据
+async function loadCbData() {
+    // 已由 runCbStrategy() 触发，此处预热
+}
+
+// 运行可转债策略
+async function runCbStrategy() {
+    const btn = event.target;
+    const container = document.getElementById('cb-container');
+    const origHTML = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>运行中...';
+    container.innerHTML = '<div class="text-center py-4"><span class="spinner-border spinner-border-sm me-2"></span>正在运行可转债策略...</div>';
+    try {
+        const d = await API.get('/api/cb/strategy');
+        if (d.results && d.results.length > 0) {
+            container.innerHTML = `<div class="table-responsive"><table class="table table-sm table-hover mb-0"><thead class="table-light"><tr><th>代码</th><th>名称</th><th>价格</th><th>溢价率</th><th>YTM</th><th>规模(亿)</th><th>评分</th><th>入选理由</th></tr></thead><tbody>` +
+                d.results.map(r => `<tr><td><code>${r.ts_code}</code></td><td><strong>${r.name}</strong></td><td>${r.price || '-'}</td><td class="${(r.premium_ratio || 0) < 0 ? 'text-success' : (r.premium_ratio || 0) > 20 ? 'text-danger' : ''}">${r.premium_ratio != null ? r.premium_ratio.toFixed(1) + '%' : '-'}</td><td>${r.ytm != null ? (r.ytm * 100).toFixed(1) + '%' : '-'}</td><td>${r.scale || '-'}</td><td><span class="badge bg-warning text-dark">${r.score || '-'}</span></td><td><small>${r.reason || ''}</small></td></tr>`).join('') +
+                '</tbody></table></div>';
+        } else {
+            container.innerHTML = '<div class="text-center py-3 text-muted">未筛选出符合条件的可转债</div>';
+        }
+    } catch (e) {
+        container.innerHTML = `<div class="text-danger p-3">策略运行失败: ${e.message}</div>`;
+    }
+    btn.disabled = false;
+    btn.innerHTML = origHTML;
+}
+
+// 加载风险数据（嵌入持仓页）
+async function loadRiskData() {
+    const container = document.getElementById('alerts-container');
+    try {
+        const d = await API.get('/api/positions/sell_signals');
+        if (d.signals && d.signals.length > 0) {
+            container.innerHTML = `<div class="table-responsive"><table class="table table-sm mb-0"><thead class="table-light"><tr><th>代码</th><th>名称</th><th>信号类型</th><th>当前价</th><th>盈亏%</th><th>理由</th></tr></thead><tbody>` +
+                d.signals.map(s => {
+                    const st = s.signal_type || s.signal || '';
+                    const signalBadge = st.includes('stop') ? '<span class="badge bg-danger">止损</span>' :
+                                       st.includes('profit') ? '<span class="badge bg-success">止盈</span>' :
+                                       '<span class="badge bg-warning text-dark">预警</span>';
+                    const pnlPct = s.profit_loss_pct != null ? (s.profit_loss_pct * 100).toFixed(1) : '-';
+                    return `<tr><td><code>${s.ts_code}</code></td><td>${s.name || s.ts_code}</td><td>${signalBadge}</td><td>${s.current_price || '-'}</td><td class="${parseFloat(pnlPct) > 0 ? 'text-success' : 'text-danger'}">${pnlPct}%</td><td><small>${s.reason || ''}</small></td></tr>`;
+                }).join('') + '</tbody></table></div>';
+        } else {
+            container.innerHTML = '<div class="text-center py-4 text-success"><i class="bi bi-check-circle me-1"></i>暂无风险预警，持仓状态良好</div>';
+        }
+    } catch (e) {
+        container.innerHTML = `<div class="text-danger p-3">加载失败: ${e.message}</div>`;
+    }
+}
+
+// Tab切换时按需加载
+document.getElementById('positionsTabs').addEventListener('click', e => {
+    if (e.target.dataset.bsTarget === '#tab-transactions') loadTransactions();
+    if (e.target.dataset.bsTarget === '#tab-sell-signals') loadSellSignals();
+});
+
+// 页面加载
+loadSummary();
+loadPositions();
+</script>
+{% endblock %}

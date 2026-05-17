@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% block title %}个股分析{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-search me-2 text-primary"></i>个股深度分析</h5>
+</div>
+
+<!-- 分析输入 -->
+<div class="card mb-4">
+    <div class="card-header bg-white fw-bold">
+        <i class="bi bi-robot me-1 text-primary"></i>触发 LLM 深度分析
+    </div>
+    <div class="card-body">
+        <p class="text-muted small mb-3">输入股票代码（如 600519.SH）或股票名称（如 贵州茅台），调用 AI 生成五段报告并保存到 research_log。</p>
+        <div class="position-relative" style="max-width:440px">
+            <div class="input-group">
+                <input type="text" id="analyze-input" class="form-control" placeholder="代码 / 名称，如：600519 或 贵州茅台"
+                       oninput="onAnalyzeInput(this.value)"
+                       onkeydown="if(event.key==='Enter') runAnalyze(); if(event.key==='Escape') closeSuggest();"
+                       autocomplete="off">
+                <button class="btn btn-primary" id="analyze-btn" onclick="runAnalyze()">
+                    <i class="bi bi-cpu me-1"></i>开始分析
+                </button>
+            </div>
+            <!-- 自动补全下拉 -->
+            <div id="suggest-box" class="border rounded shadow-sm bg-white position-absolute w-100" style="z-index:999;display:none;top:100%"></div>
+        </div>
+        <div id="analyze-status" class="mt-3" style="display:none"></div>
+    </div>
+</div>
+
+<!-- 分析结果 -->
+<div id="analyze-result" class="mb-4" style="display:none">
+    <div class="card border-primary">
+        <div class="card-header bg-primary text-white fw-bold" id="result-header"></div>
+        <div class="card-body" id="result-body" style="white-space:pre-wrap;font-size:14px;line-height:1.8"></div>
+    </div>
+</div>
+
+<!-- 历史报告列表 -->
+<div class="card">
+    <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-clock-history me-1 text-secondary"></i>历史分析报告</span>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadRecent()">
+            <i class="bi bi-arrow-clockwise"></i>
+        </button>
+    </div>
+    <div class="card-body p-0" id="recent-container">
+        <div class="text-center py-4 text-muted">
+            <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// 读取 URL 参数自动填入，autorun=1 时直接触发分析
+const _params = new URLSearchParams(window.location.search);
+const urlCode = _params.get('code');
+const urlAutoRun = _params.get('autorun') === '1';
+if (urlCode) {
+    document.getElementById('analyze-input').value = urlCode;
+    if (urlAutoRun) window.addEventListener('load', () => runAnalyze());
+}
+
+let suggestTimer = null;
+async function onAnalyzeInput(val) {
+    closeSuggest();
+    if (val.length < 2) return;
+    clearTimeout(suggestTimer);
+    suggestTimer = setTimeout(async () => {
+        try {
+            const d = await API.get(`/api/pool/search?q=${encodeURIComponent(val)}`);
+            showSuggest(d.results || []);
+        } catch(e) {}
+    }, 300);
+}
+
+function showSuggest(results) {
+    const box = document.getElementById('suggest-box');
+    if (!results.length) { box.style.display = 'none'; return; }
+    box.innerHTML = results.map(r =>
+        `<div class="px-3 py-2 suggest-item" style="cursor:pointer"
+              onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background=''"
+              onclick="selectSuggest('${r.ts_code}','${r.name}')">
+            <strong>${r.name}</strong>
+            <span class="text-muted small ms-2">${r.ts_code}</span>
+            <span class="text-muted small ms-2">${r.industry||''}</span>
+        </div>`
+    ).join('');
+    box.style.display = 'block';
+}
+
+function selectSuggest(code, name) {
+    document.getElementById('analyze-input').value = code;
+    closeSuggest();
+}
+
+function closeSuggest() {
+    document.getElementById('suggest-box').style.display = 'none';
+}
+
+document.addEventListener('click', e => {
+    if (!e.target.closest('#analyze-input') && !e.target.closest('#suggest-box')) closeSuggest();
+});
+
+async function resolveCode(input) {
+    // 纯数字 → 补后缀
+    if (/^\d{6}$/.test(input)) {
+        return input + (input.startsWith('6') ? '.SH' : '.SZ');
+    }
+    // 已是完整代码
+    if (/^\d{6}\.[A-Z]{2}$/.test(input)) return input;
+    // 否则按名称搜索
+    try {
+        const d = await API.get(`/api/pool/search?q=${encodeURIComponent(input)}`);
+        if (d.results && d.results.length > 0) return d.results[0].ts_code;
+    } catch(e) {}
+    return input;
+}
+
+async function runAnalyze() {
+    let raw = document.getElementById('analyze-input').value.trim();
+    if (!raw) { alert('请输入股票代码或名称'); return; }
+    closeSuggest();
+
+    // 名称解析为代码
+    const tsCode = await resolveCode(raw);
+    document.getElementById('analyze-input').value = tsCode;
+    if (!tsCode) { alert('未找到对应股票，请检查输入'); return; }
+
+    const btn = document.getElementById('analyze-btn');
+    const statusEl = document.getElementById('analyze-status');
+    const resultEl = document.getElementById('analyze-result');
+
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>分析中（约30-60秒）...';
+    statusEl.style.display = 'block';
+    statusEl.innerHTML = '<div class="alert alert-info"><i class="bi bi-cpu me-2"></i>正在调用 LLM 分析，请稍候...</div>';
+    resultEl.style.display = 'none';
+
+    try {
+        const d = await API.post(`/api/analyze/run?ts_code=${encodeURIComponent(tsCode)}`);
+        if (!d.success) {
+            statusEl.innerHTML = `<div class="alert alert-danger">${d.error || '分析失败'}</div>`;
+        } else {
+            statusEl.style.display = 'none';
+            // 显示结果
+            const r = d.result || {};
+            const name = r.company_name || tsCode;
+            document.getElementById('result-header').textContent = `${name} 深度分析报告`;
+            // 拼接报告文本
+            const text = r.report || r.full_report || r.report_text || JSON.stringify(r, null, 2);
+            document.getElementById('result-body').textContent = text;
+            resultEl.style.display = '';
+            // 刷新历史列表
+            loadRecent();
+        }
+    } catch (e) {
+        statusEl.innerHTML = `<div class="alert alert-danger">请求失败：${e.message}</div>`;
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-cpu me-1"></i>开始分析';
+}
+
+async function loadRecent() {
+    const container = document.getElementById('recent-container');
+    container.innerHTML = loadingHTML();
+    try {
+        const d = await API.get('/api/analyze/recent?limit=30');
+        const reports = d.reports || [];
+        if (!reports.length) {
+            container.innerHTML = emptyHTML('暂无历史分析报告');
+            return;
+        }
+        const rows = reports.map(r => {
+            const typeNames = { brand: '品牌', cashflow: '现金流', resource: '资源', rate_sensitive: '利率敏感', growth: '成长', policy: '政策' };
+            const typeName = typeNames[r.company_type] || r.company_type || '';
+            return `<tr>
+                <td><strong>${r.company_name || ''}</strong></td>
+                <td><code class="small text-primary">${(r.ts_code || '').substring(0, 6)}</code></td>
+                <td><span class="badge bg-secondary">${typeName}</span></td>
+                <td class="text-muted small">${(r.log_date || '').substring(0, 10)}</td>
+                <td class="text-muted small" style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${r.report_summary || ''}</td>
+                <td>
+                    <button class="btn btn-xs btn-outline-secondary py-0 px-1" style="font-size:11px"
+                        onclick="loadReport('${r.ts_code}', '${r.company_name || r.ts_code}')">查看</button>
+                    <button class="btn btn-xs btn-outline-primary py-0 px-1 ms-1" style="font-size:11px"
+                        onclick="document.getElementById('analyze-input').value='${r.ts_code}';runAnalyze()">重新分析</button>
+                </td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `<div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr><th>名称</th><th>代码</th><th>类型</th><th>日期</th><th>摘要</th><th>操作</th></tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+    } catch (e) {
+        container.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+async function loadReport(tsCode, name) {
+    try {
+        const d = await API.get(`/api/analyze/report?ts_code=${encodeURIComponent(tsCode)}`);
+        const r = d.report;
+        if (!r) { alert('暂无报告'); return; }
+        document.getElementById('result-header').textContent = `${name} 深度分析报告（${(r.log_date || '').substring(0, 10)}）`;
+        const text = r.full_report || r.report_text || r.summary || JSON.stringify(r, null, 2);
+        document.getElementById('result-body').textContent = text;
+        document.getElementById('analyze-result').style.display = '';
+        window.scrollTo(0, document.getElementById('analyze-result').offsetTop - 100);
+    } catch (e) {
+        alert('加载报告失败：' + e.message);
+    }
+}
+
+loadRecent();
+</script>
+{% endblock %}

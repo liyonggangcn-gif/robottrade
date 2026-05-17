@@ -1,0 +1,534 @@
+{% extends "base.html" %}
+{% block title %}策略中心{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-stars me-2 text-warning"></i>策略中心</h5>
+    <button class="btn btn-sm btn-outline-primary" onclick="loadSignals()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<!-- 策略概览卡片 -->
+<div class="row g-3 mb-4" id="strategy-cards"></div>
+
+<!-- 标签页 -->
+<ul class="nav nav-tabs mb-3" id="strategyTabs">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-signals">
+            <i class="bi bi-list-ul me-1"></i>策略信号
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-run" onclick="initRunTab()">
+            <i class="bi bi-play-circle me-1"></i>手动运行
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-ensemble" onclick="initEnsembleTab()">
+            <i class="bi bi-diagram-3 me-1"></i>多策略融合
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-industry" onclick="loadIndustryTiming()">
+            <i class="bi bi-building me-1"></i>行业择机
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-macro">
+            <i class="bi bi-globe me-1"></i>宏观指标
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-factor-ic">
+            <i class="bi bi-bar-chart me-1"></i>因子IC
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- 策略信号 Tab -->
+    <div class="tab-pane fade show active" id="tab-signals">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span id="signals-title">最新策略信号</span>
+                <small class="text-muted" id="signals-date"></small>
+            </div>
+            <div class="card-body p-0" id="signals-container">
+                <div class="text-center py-5 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 手动运行 Tab -->
+    <div class="tab-pane fade" id="tab-run">
+        <div class="card">
+            <div class="card-header bg-white">手动运行策略</div>
+            <div class="card-body">
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-4">
+                        <label class="form-label">选择策略</label>
+                        <select class="form-select" id="run-strategy">
+                            <option value="">加载中...</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">选股数量</label>
+                        <input type="number" class="form-control" id="run-topk" value="20" min="5" max="50">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <button class="btn btn-primary w-100" onclick="runStrategy()">
+                            <i class="bi bi-play me-1"></i>运行
+                        </button>
+                    </div>
+                </div>
+                <hr>
+                <div id="run-result" class="mt-3">
+                    <div class="text-muted small">点击"运行"按钮执行选股</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 多策略融合 Tab -->
+    <div class="tab-pane fade" id="tab-ensemble">
+        <div class="card">
+            <div class="card-header bg-white">多策略加权融合</div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label">勾选参与策略并设置权重（权重总和自动归一化）</label>
+                    <div id="ensemble-weights" class="row g-2"></div>
+                </div>
+                <div class="row g-3 align-items-end">
+                    <div class="col-md-3">
+                        <label class="form-label">最终选股数</label>
+                        <input type="number" class="form-control" id="ensemble-topk" value="20" min="5" max="50">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-success w-100" onclick="runEnsemble()">
+                            <i class="bi bi-diagram-3 me-1"></i>融合选股
+                        </button>
+                    </div>
+                </div>
+                <hr>
+                <div id="ensemble-result" class="mt-3">
+                    <div class="text-muted small">勾选策略后点击"融合选股"</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 行业择机 Tab -->
+    <div class="tab-pane fade" id="tab-industry">
+        <div class="card">
+            <div class="card-header bg-white">行业择机信号（渗透率 + 经济周期）</div>
+            <div class="card-body p-0" id="industry-container">
+                <div class="text-center py-5 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">选择策略</label>
+                        <select class="form-select" id="run-strategy">
+                            <option value="pb_roa">PB-ROA价值策略</option>
+                            <option value="convertible_bond">可转债策略</option>
+                            <option value="index_enhance">指数增强策略</option>
+                            <option value="etf_unified">ETF统一策略</option>
+                            <option value="small_cap">小市值策略</option>
+                            <option value="hybrid">混合策略</option>
+                        </select>
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">选股数量</label>
+                        <input type="number" class="form-control" id="run-topk" value="20" min="5" max="50">
+                    </div>
+                    <div class="col-md-3">
+                        <label class="form-label">&nbsp;</label>
+                        <button class="btn btn-primary w-100" onclick="runStrategy()">
+                            <i class="bi bi-play me-1"></i>运行
+                        </button>
+                    </div>
+                </div>
+                <hr>
+                <div id="run-result" class="mt-3">
+                    <div class="text-muted small">点击"运行"按钮执行选股</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 宏观指标 Tab -->
+    <div class="tab-pane fade" id="tab-macro">
+        <div class="card">
+            <div class="card-header bg-white">宏观指标</div>
+            <div class="card-body p-0" id="macro-container">
+                <div class="text-center py-5 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 因子IC Tab -->
+    <div class="tab-pane fade" id="tab-factor-ic">
+        <div class="card">
+            <div class="card-header bg-white">因子IC排名</div>
+            <div class="card-body p-0" id="factor-ic-container">
+                <div class="text-center py-5 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// 动态加载策略列表
+let allStrategies = [];
+let strategyLabels = {};
+
+function loadStrategyList() {
+    return fetch('/api/strategy/list')
+        .then(r => r.json())
+        .then(data => {
+            allStrategies = data.strategies || [];
+            strategyLabels = {};
+            allStrategies.forEach(s => { strategyLabels[s.key] = s.name; });
+            // 填充下拉
+            const sel = document.getElementById('run-strategy');
+            sel.innerHTML = '';
+            allStrategies.forEach(s => {
+                sel.innerHTML += `<option value="${s.key}">${s.name}</option>`;
+            });
+            // 填充融合权重勾选
+            const container = document.getElementById('ensemble-weights');
+            container.innerHTML = '';
+            allStrategies.forEach(s => {
+                container.innerHTML += `
+                    <div class="col-md-3 col-6">
+                        <div class="input-group input-group-sm">
+                            <div class="input-group-text">
+                                <input class="form-check-input mt-0" type="checkbox" value="${s.key}" checked>
+                            </div>
+                            <span class="input-group-text">${s.name}</span>
+                            <input type="number" class="form-control" value="1" min="0" max="10" step="0.1" data-key="${s.key}">
+                        </div>
+                    </div>`;
+            });
+            // 填充概览卡片
+            renderStrategyCards();
+        });
+}
+
+function renderStrategyCards() {
+    const colors = ['primary','success','warning','info','danger','secondary','dark','primary','success','warning','info','danger','secondary'];
+    let html = '';
+    allStrategies.forEach((s, i) => {
+        const c = colors[i % colors.length];
+        html += `<div class="col-md-3 col-6">
+            <div class="card text-center border-${c}" style="cursor:pointer" onclick="quickRun('${s.key}')">
+                <div class="card-body py-3">
+                    <div class="text-muted small">${s.name}</div>
+                    <div class="fw-bold fs-4" id="card-${s.key}">—</div>
+                </div>
+            </div>
+        </div>`;
+    });
+    document.getElementById('strategy-cards').innerHTML = html;
+}
+
+function quickRun(key) {
+    // 切换到手动运行标签并执行
+    document.getElementById('run-strategy').value = key;
+    const tabBtn = document.querySelector('[data-bs-target="#tab-run"]');
+    new bootstrap.Tab(tabBtn).show();
+    runStrategy();
+}
+
+// 策略轨道映射
+const trackLabels = {
+    'sector_rotation': 'A轨', 'value': 'B轨', 'both': 'AB轨',
+    'pb_roa': 'PB-ROA', 'convertible_bond': '可转债',
+    'index_enhance': '指数增强', 'etf': 'ETF'
+};
+
+function loadSignals() {
+    fetch('/api/strategy/signals')
+        .then(r => r.json())
+        .then(data => {
+            renderSignalCards(data);
+            renderSignals(data);
+        })
+        .catch(err => {
+            document.getElementById('signals-container').innerHTML = 
+                '<div class="text-center py-5 text-danger">加载失败: ' + err + '</div>';
+        });
+}
+
+function renderSignalCards(data) {
+    // 统计各策略信号数
+    const counts = {};
+    allStrategies.forEach(s => { counts[s.key] = 0; });
+    if (data.signals) {
+        data.signals.forEach(s => {
+            const strategy = s.strategy || '';
+            // 匹配策略标签
+            for (const key of Object.keys(strategyLabels)) {
+                if (strategy.includes(key)) { counts[key]++; break; }
+            }
+        });
+    }
+    // 更新卡片
+    for (const key of Object.keys(counts)) {
+        const el = document.getElementById('card-' + key);
+        if (el) el.textContent = counts[key] || '—';
+    }
+}
+
+function renderSignals(data) {
+    document.getElementById('signals-date').textContent = data.date || '';
+    
+    if (!data.signals || data.signals.length === 0) {
+        document.getElementById('signals-container').innerHTML = 
+            '<div class="text-center py-5 text-muted">暂无策略信号</div>';
+        return;
+    }
+    
+    let html = `<table class="table table-hover mb-0">
+        <thead class="table-light">
+            <tr>
+                <th>排名</th>
+                <th>代码</th>
+                <th>名称</th>
+                <th>策略</th>
+                <th>评分</th>
+                <th>入选理由</th>
+            </tr>
+        </thead>
+        <tbody>`;
+    
+    data.signals.forEach((s, i) => {
+        const strategy = s.strategy || '';
+        const label = strategyLabels[strategy] || strategy;
+        const score = (s.score || 0).toFixed(3);
+        const detail = (s.signal_detail || '').substring(0, 50);
+        
+        html += `<tr>
+            <td>${i + 1}</td>
+            <td><code>${s.ts_code || ''}</code></td>
+            <td>${s.name || ''}</td>
+            <td><span class="badge bg-primary">${label}</span></td>
+            <td><span class="fw-bold">${score}</span></td>
+            <td class="small text-muted">${detail}</td>
+        </tr>`;
+    });
+    
+    html += '</tbody></table>';
+    document.getElementById('signals-container').innerHTML = html;
+}
+
+let runTabInited = false;
+function initRunTab() {
+    if (runTabInited) return;
+    runTabInited = true;
+}
+
+function runStrategy() {
+    const strategy = document.getElementById('run-strategy').value;
+    const topk = parseInt(document.getElementById('run-topk').value) || 20;
+    const resultDiv = document.getElementById('run-result');
+    
+    resultDiv.innerHTML = '<div class="text-muted"><span class="spinner-border spinner-border-sm me-2"></span>运行中...</div>';
+    
+    fetch(`/api/strategy/run?strategy=${strategy}&limit=${topk}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) {
+                resultDiv.innerHTML = `<div class="alert alert-danger">错误: ${data.error}</div>`;
+                return;
+            }
+            
+            let html = `<div class="alert alert-success">${strategyLabels[strategy] || strategy} 选出 ${data.count} 只股票</div>`;
+            
+            if (data.stocks && data.stocks.length > 0) {
+                html += `<table class="table table-sm table-hover">
+                    <thead><tr><th>代码</th><th>名称</th><th>评分</th></tr></thead><tbody>`;
+                data.stocks.forEach(s => {
+                    html += `<tr>
+                        <td><code>${s.ts_code}</code></td>
+                        <td>${s.name}</td>
+                        <td>${(s.score || 0).toFixed(3)}</td>
+                    </tr>`;
+                });
+                html += '</tbody></table>';
+            }
+            
+            resultDiv.innerHTML = html;
+        })
+        .catch(err => {
+            resultDiv.innerHTML = `<div class="alert alert-danger">运行失败: ${err}</div>`;
+        });
+}
+
+function loadMacro() {
+    fetch('/api/strategy/macro')
+        .then(r => r.json())
+        .then(data => {
+            renderMacro(data);
+        })
+        .catch(err => {
+            document.getElementById('macro-container').innerHTML = 
+                '<div class="text-center py-5 text-danger">加载失败</div>';
+        });
+}
+
+function renderMacro(data) {
+    if (!data.indicators || data.indicators.length === 0) {
+        document.getElementById('macro-container').innerHTML = 
+            '<div class="text-center py-5 text-muted">暂无宏观数据</div>';
+        return;
+    }
+    
+    // 去重，取最新
+    const latest = {};
+    data.indicators.forEach(ind => {
+        const key = ind.indicator;
+        if (!latest[key] || ind.data_date > latest[key].data_date) {
+            latest[key] = ind;
+        }
+    });
+    
+    let html = '<table class="table table-hover mb-0"><thead><tr><th>指标</th><th>数值</th><th>日期</th></tr></thead><tbody>';
+    Object.values(latest).forEach(ind => {
+        html += `<tr>
+            <td>${ind.indicator}</td>
+            <td class="fw-bold">${ind.value.toFixed(2)}</td>
+            <td class="text-muted">${ind.data_date}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('macro-container').innerHTML = html;
+}
+
+function loadFactorIC() {
+    fetch('/api/strategy/factor_ic')
+        .then(r => r.json())
+        .then(data => {
+            renderFactorIC(data);
+        })
+        .catch(err => {
+            document.getElementById('factor-ic-container').innerHTML = 
+                '<div class="text-center py-5 text-danger">加载失败</div>';
+        });
+}
+
+function renderFactorIC(data) {
+    if (!data.factors || data.factors.length === 0) {
+        document.getElementById('factor-ic-container').innerHTML = 
+            '<div class="text-center py-5 text-muted">暂无因子IC数据</div>';
+        return;
+    }
+    
+    let html = `<div class="px-3 py-2 small text-muted">数据日期: ${data.date || ''}</div>`;
+    html += '<table class="table table-hover mb-0"><thead><tr><th>因子</th><th>IC均值(60d)</th><th>IC_IR</th><th>有效</th></tr></thead><tbody>';
+    
+    data.factors.forEach(f => {
+        const valid = f.is_valid ? '<span class="badge bg-success">有效</span>' : '<span class="badge bg-danger">无效</span>';
+        const icColor = f.ic_mean_60d > 0 ? 'text-success' : 'text-danger';
+        html += `<tr>
+            <td>${f.factor_name}</td>
+            <td class="fw-bold ${icColor}">${f.ic_mean_60d.toFixed(4)}</td>
+            <td>${f.ic_ir.toFixed(3)}</td>
+            <td>${valid}</td>
+        </tr>`;
+    });
+    html += '</tbody></table>';
+    document.getElementById('factor-ic-container').innerHTML = html;
+}
+
+// ── 多策略融合 ──
+let ensembleInited = false;
+function initEnsembleTab() { /* 权重已在 loadStrategyList 中填充 */ }
+
+function runEnsemble() {
+    const topk = parseInt(document.getElementById('ensemble-topk').value) || 20;
+    const resultDiv = document.getElementById('ensemble-result');
+    // 收集勾选的权重
+    const weights = {};
+    document.querySelectorAll('#ensemble-weights .form-check-input:checked').forEach(cb => {
+        const key = cb.value;
+        const input = document.querySelector(`#ensemble-weights input[data-key="${key}"]`);
+        const w = parseFloat(input ? input.value : 1) || 1;
+        if (w > 0) weights[key] = w;
+    });
+    if (Object.keys(weights).length === 0) {
+        resultDiv.innerHTML = '<div class="alert alert-warning">请至少勾选一个策略</div>';
+        return;
+    }
+    resultDiv.innerHTML = '<div class="text-muted"><span class="spinner-border spinner-border-sm me-2"></span>融合中...</div>';
+    fetch(`/api/strategy/ensemble?weights=${encodeURIComponent(JSON.stringify(weights))}&limit=${topk}`)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { resultDiv.innerHTML = `<div class="alert alert-danger">${data.error}</div>`; return; }
+            let html = `<div class="alert alert-success">融合选出 ${data.count} 只</div>`;
+            if (data.stocks && data.stocks.length > 0) {
+                html += `<table class="table table-sm table-hover"><thead><tr><th>#</th><th>代码</th><th>名称</th><th>评分</th><th>来源策略</th><th>入选理由</th></tr></thead><tbody>`;
+                data.stocks.forEach((s, i) => {
+                    html += `<tr><td>${i+1}</td><td><code>${s.ts_code}</code></td><td>${s.name}</td><td>${(s.score||0).toFixed(4)}</td><td>${s.strategy||''}</td><td class="small text-muted">${(s.signal_reason||'').substring(0,40)}</td></tr>`;
+                });
+                html += '</tbody></table>';
+            }
+            resultDiv.innerHTML = html;
+        })
+        .catch(err => { resultDiv.innerHTML = `<div class="alert alert-danger">失败: ${err}</div>`; });
+}
+
+// ── 行业择机 ──
+function loadIndustryTiming() {
+    const container = document.getElementById('industry-container');
+    container.innerHTML = '<div class="text-center py-5 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>加载中...</div>';
+    fetch('/api/strategy/industry_timing')
+        .then(r => r.json())
+        .then(data => {
+            if (!data.signals || data.signals.length === 0) {
+                container.innerHTML = '<div class="text-center py-5 text-muted">暂无行业择机数据</div>';
+                return;
+            }
+            let html = '<table class="table table-hover mb-0"><thead><tr><th>行业</th><th>渗透率阶段</th><th>经济周期</th><th>建议</th><th>相对强度</th><th>行业收益</th><th>基准收益</th></tr></thead><tbody>';
+            const recColor = { '超配': 'bg-success', '标配': 'bg-secondary', '低配': 'bg-danger' };
+            data.signals.forEach(s => {
+                const badge = recColor[s.recommendation] || 'bg-secondary';
+                const rs = (s.relative_strength * 100).toFixed(1);
+                const rsColor = s.relative_strength > 0 ? 'text-success' : 'text-danger';
+                html += `<tr>
+                    <td class="fw-bold">${s.industry}</td>
+                    <td><span class="badge bg-info">${s.penetration_phase}</span></td>
+                    <td>${s.cycle_type}</td>
+                    <td><span class="badge ${badge}">${s.recommendation}</span></td>
+                    <td class="fw-bold ${rsColor}">${rs}%</td>
+                    <td>${(s.abs_return*100).toFixed(1)}%</td>
+                    <td>${(s.benchmark_return*100).toFixed(1)}%</td>
+                </tr>`;
+            });
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        })
+        .catch(err => { container.innerHTML = `<div class="text-center py-5 text-danger">加载失败: ${err}</div>`; });
+}
+
+// 加载因子IC时调用
+document.querySelector('[data-bs-target="#tab-factor-ic"]').addEventListener('shown.bs.tab', loadFactorIC);
+// 加载宏观时调用
+document.querySelector('[data-bs-target="#tab-macro"]').addEventListener('shown.bs.tab', loadMacro);
+
+// 初始加载
+loadStrategyList().then(() => loadSignals());
+</script>
+{% endblock %}

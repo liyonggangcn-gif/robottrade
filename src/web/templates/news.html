@@ -1,0 +1,444 @@
+{% extends "base.html" %}
+{% block title %}新闻分析{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0"><i class="bi bi-newspaper me-2 text-primary"></i>新闻分析</h5>
+    <div class="d-flex gap-2 align-items-center">
+        <div class="btn-group btn-group-sm" role="group" aria-label="时间窗口">
+            <input type="radio" class="btn-check" name="hours" id="h2" value="2">
+            <label class="btn btn-outline-secondary" for="h2">2小时</label>
+            <input type="radio" class="btn-check" name="hours" id="h4" value="4" checked>
+            <label class="btn btn-outline-secondary" for="h4">4小时</label>
+            <input type="radio" class="btn-check" name="hours" id="h8" value="8">
+            <label class="btn btn-outline-secondary" for="h8">8小时</label>
+            <input type="radio" class="btn-check" name="hours" id="h12" value="12">
+            <label class="btn btn-outline-secondary" for="h12">12小时</label>
+        </div>
+        <button class="btn btn-sm btn-outline-primary" onclick="refreshAll()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
+</div>
+
+<!-- 标签页切换 -->
+<ul class="nav nav-tabs mb-3" id="newsTabs">
+    <li class="nav-item">
+        <a class="nav-link active" data-bs-toggle="tab" href="#tab-pool" onclick="onTabPool()">
+            <i class="bi bi-bookmark-star me-1 text-warning"></i>自选股动态
+            <span class="badge bg-warning text-dark ms-1" id="pool-badge" style="display:none"></span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#tab-news">
+            <i class="bi bi-list-ul me-1"></i>财经快讯
+            <span class="badge bg-secondary ms-1" id="news-badge"></span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#tab-gov" onclick="loadGovNews()">
+            <i class="bi bi-bank me-1 text-danger"></i>政策公告
+            <span class="badge bg-danger ms-1" id="gov-badge" style="display:none"></span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" data-bs-toggle="tab" href="#tab-ai">
+            <i class="bi bi-cpu me-1 text-info"></i>AI 市场分析
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+
+    <!-- 自选股动态 -->
+    <div class="tab-pane fade show active" id="tab-pool">
+        <div id="pool-content">
+            <div class="text-center py-5 text-muted">
+                <span class="spinner-border spinner-border-sm me-2"></span>匹配自选股动态...
+            </div>
+        </div>
+    </div>
+
+    <!-- 财经快讯 -->
+    <div class="tab-pane fade" id="tab-news">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+                <span class="small fw-semibold"><i class="bi bi-list-ul me-1"></i>财经快讯</span>
+                <small class="text-muted" id="news-count"></small>
+            </div>
+            <div id="news-list" style="max-height:calc(100vh - 270px);overflow-y:auto">
+                <div class="text-center py-5 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 政策公告 -->
+    <div class="tab-pane fade" id="tab-gov">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+                <span class="small fw-semibold"><i class="bi bi-bank me-1 text-danger"></i>政府官网政策公告</span>
+                <div class="d-flex gap-2 align-items-center">
+                    <small class="text-muted" id="gov-count"></small>
+                    <button class="btn btn-sm btn-outline-danger" id="gov-sync-btn" onclick="syncGovNews(this)">
+                        <i class="bi bi-cloud-download me-1"></i>立即同步
+                    </button>
+                </div>
+            </div>
+            <div id="gov-news-list" style="max-height:calc(100vh - 270px);overflow-y:auto">
+                <div class="text-center py-5 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- AI 分析 -->
+    <div class="tab-pane fade" id="tab-ai">
+        <div class="card">
+            <div class="card-body">
+                <p class="text-muted small mb-3">基于最新新闻，使用 LLM 分析市场情绪、识别风险和机会</p>
+                <button class="btn btn-primary mb-3" id="analyze-btn" onclick="analyzeNews(this)">
+                    <i class="bi bi-cpu me-1"></i>触发 LLM 分析
+                </button>
+                <div id="analysis-result"></div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function getHours() {
+    const checked = document.querySelector('input[name="hours"]:checked');
+    return checked ? parseFloat(checked.value) : 4;
+}
+
+/* ── 自选股动态 ── */
+let _poolLoaded = false;
+
+async function loadPoolMapping() {
+    const hours = getHours();
+    const el = document.getElementById('pool-content');
+    el.innerHTML = `<div class="text-center py-5 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>匹配最近${hours}小时新闻与自选股...</div>`;
+    try {
+        const d = await API.get(`/api/news/pool_mapping?hours=${hours}`);
+        const stocks = d.stocks || [];
+        const badge = document.getElementById('pool-badge');
+        if (stocks.length) {
+            badge.textContent = stocks.length;
+            badge.style.display = '';
+        } else {
+            badge.style.display = 'none';
+        }
+
+        if (d.error) {
+            el.innerHTML = errorHTML('加载失败：' + d.error);
+            return;
+        }
+
+        if (!stocks.length) {
+            el.innerHTML = `<div class="text-center py-5 text-muted">
+                <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                最近${hours}小时暂无自选股相关新闻<br>
+                <small>共扫描 ${d.total_news || 0} 条新闻，尝试扩大时间窗口</small>
+            </div>`;
+            return;
+        }
+
+        let html = `<div class="row g-3">`;
+        for (const s of stocks) {
+            const count = s.news.length;
+            const newsRows = s.news.slice(0, 5).map(n => `
+                <div class="border-top pt-2 mt-2" style="font-size:12px">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div class="flex-grow-1">
+                            ${n.url
+                                ? `<a href="${n.url}" target="_blank" class="text-decoration-none text-dark fw-semibold lh-sm">${n.title}</a>`
+                                : `<span class="fw-semibold lh-sm">${n.title}</span>`}
+                            ${n.summary ? `<div class="text-muted mt-1" style="font-size:11px">${n.summary}</div>` : ''}
+                        </div>
+                        <div class="text-end text-nowrap text-muted ms-2" style="font-size:11px">
+                            <div>${sourceBadge(n.source)}</div>
+                            <div>${n.time || ''}</div>
+                        </div>
+                    </div>
+                </div>`).join('');
+
+            const moreHint = count > 5
+                ? `<div class="border-top pt-2 mt-2 text-center text-muted" style="font-size:11px">还有 ${count - 5} 条相关新闻...</div>`
+                : '';
+
+            html += `
+            <div class="col-md-6 col-xl-4">
+                <div class="card h-100">
+                    <div class="card-header py-2 d-flex justify-content-between align-items-center bg-white">
+                        <div>
+                            <span class="fw-bold">${s.name}</span>
+                            <small class="text-muted ms-1">${s.ts_code}</small>
+                        </div>
+                        <span class="badge bg-primary">${count} 条</span>
+                    </div>
+                    <div class="card-body py-2 px-3">${newsRows}${moreHint}</div>
+                </div>
+            </div>`;
+        }
+        html += `</div>`;
+        html += `<div class="text-muted small mt-3 text-end">共扫描 ${d.total_news || 0} 条新闻，${d.unmatched_count || 0} 条未匹配</div>`;
+        el.innerHTML = html;
+    } catch (e) {
+        el.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+function onTabPool() {
+    if (!_poolLoaded) {
+        _poolLoaded = true;
+        loadPoolMapping();
+    }
+}
+
+/* ── 财经快讯 ── */
+async function loadNews() {
+    const list = document.getElementById('news-list');
+    const countEl = document.getElementById('news-count');
+    const badgeEl = document.getElementById('news-badge');
+    const hours = getHours();
+    list.innerHTML = `<div class="text-center py-5 text-muted"><span class="spinner-border spinner-border-sm me-2"></span>抓取最近${hours}小时快讯...</div>`;
+    try {
+        const d = await API.get(`/api/news/latest?hours=${hours}`);
+        const news = d.news || [];
+        countEl.textContent = `共 ${news.length} 条`;
+        badgeEl.textContent = news.length;
+
+        if (!news.length) {
+            list.innerHTML = emptyHTML(d.error ? `抓取失败：${d.error}` : '暂无新闻数据');
+            return;
+        }
+
+        const items = news.map(n => `
+            <div class="news-item">
+                <div class="news-title">
+                    ${n.url ? `<a href="${n.url}" target="_blank" class="text-decoration-none text-dark">${n.title}</a>` : n.title}
+                </div>
+                <div class="news-meta d-flex gap-2 align-items-center flex-wrap">
+                    ${sourceBadge(n.source)}
+                    <span>${n.time || ''}</span>
+                    ${n.summary ? `<span class="text-secondary" style="font-size:11px">${n.summary}</span>` : ''}
+                </div>
+            </div>`).join('');
+        list.innerHTML = items;
+    } catch (e) {
+        list.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+/* ── AI 分析 ── */
+async function analyzeNews(btn) {
+    const hours = getHours();
+    const resultEl = document.getElementById('analysis-result');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>分析中（约10-30秒）...';
+    resultEl.innerHTML = `<div class="text-center py-3 text-muted"><span class="spinner-border me-2"></span>LLM 正在分析最近${hours}小时新闻...</div>`;
+    try {
+        const d = await API.postQuery('/api/news/analyze', { hours });
+        if (!d.success) {
+            resultEl.innerHTML = errorHTML(d.error || 'LLM分析失败');
+            return;
+        }
+        renderAnalysis(d.result || {});
+    } catch (e) {
+        resultEl.innerHTML = errorHTML('请求失败：' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cpu me-1"></i>重新分析';
+    }
+}
+
+function renderAnalysis(r) {
+    const resultEl = document.getElementById('analysis-result');
+    if (!r || Object.keys(r).length === 0) {
+        resultEl.innerHTML = emptyHTML('未获取到分析结果');
+        return;
+    }
+    const risk = r.risk_level || r.风险等级 || '';
+    const riskClass = risk.includes('高') ? 'danger' : risk.includes('中') ? 'warning' : 'success';
+    const sentiment = r.market_sentiment || r.市场情绪 || '';
+    const advice = r.position_advice || r.operation_advice || r.操作建议 || r.仓位建议 || '';
+    const events = r.major_events || r.重大事件 || [];
+    const sectors = r.sector_impact || r.板块影响 || [];
+    const summary = r.summary || r.摘要 || '';
+
+    let html = '<div class="analysis-section">';
+    html += `<div class="d-flex gap-2 flex-wrap mb-3">`;
+    if (risk) html += `<span class="badge risk-badge-${risk} fs-6">${risk} 风险</span>`;
+    if (sentiment) html += `<span class="badge bg-info">${sentiment}</span>`;
+    html += `</div>`;
+    if (summary) html += `<p class="text-secondary small mb-2">${summary}</p>`;
+    if (advice) html += `<div class="alert alert-primary py-2 mb-2 small"><strong>操作建议：</strong>${advice}</div>`;
+    html += '</div>';
+
+    if (events && events.length) {
+        const eventItems = (Array.isArray(events) ? events : [events]).map(e =>
+            `<li class="small mb-1">${typeof e === 'string' ? e : JSON.stringify(e)}</li>`
+        ).join('');
+        html += `<div class="analysis-section">
+            <h6 class="mb-2"><i class="bi bi-exclamation-circle me-1 text-warning"></i>重大事件</h6>
+            <ul class="ps-3 mb-0">${eventItems}</ul>
+        </div>`;
+    }
+
+    if (sectors && (Array.isArray(sectors) ? sectors.length : Object.keys(sectors).length)) {
+        let sectorRows = '';
+        if (Array.isArray(sectors)) {
+            sectorRows = sectors.map(s => {
+                const name = s.sector || s.name || s.板块 || '—';
+                const impact = s.impact || s.direction || s.影响 || '';
+                const reason = s.reason || s.原因 || '';
+                const cls = impact.includes('利好') || impact.includes('正面') ? 'table-success' : 'table-danger';
+                return `<tr class="${cls}"><td class="small">${name}</td><td class="small">${impact}</td><td class="small text-muted">${reason}</td></tr>`;
+            }).join('');
+        } else {
+            sectorRows = Object.entries(sectors).map(([k, v]) => {
+                const cls = (v || '').includes('利好') ? 'table-success' : 'table-danger';
+                return `<tr class="${cls}"><td class="small">${k}</td><td class="small">${v}</td><td></td></tr>`;
+            }).join('');
+        }
+        html += `<div class="analysis-section">
+            <h6 class="mb-2"><i class="bi bi-pie-chart me-1 text-info"></i>板块影响</h6>
+            <table class="table table-sm mb-0"><thead><tr><th>板块</th><th>影响</th><th>原因</th></tr></thead><tbody>${sectorRows}</tbody></table>
+        </div>`;
+    }
+
+    resultEl.innerHTML = html;
+}
+
+/* ── 政策公告 ── */
+let _govLoaded = false;
+const SENTIMENT_MAP = { positive: {label:'利多', cls:'success'}, negative: {label:'利空', cls:'danger'}, neutral: {label:'中性', cls:'secondary'} };
+const SOURCE_COLOR = { gov:'danger', pbc:'primary', csrc:'warning', stats:'info', ndrc:'success', miit:'secondary', mof:'dark', nfra:'primary' };
+
+async function loadGovNews() {
+    if (_govLoaded) return;
+    _govLoaded = true;
+    const el = document.getElementById('gov-news-list');
+    el.innerHTML = loadingHTML();
+    try {
+        const d = await API.get('/api/news/gov?hours=72');
+        const items = d.items || [];
+        const badge = document.getElementById('gov-badge');
+        const countEl = document.getElementById('gov-count');
+        const hasSignal = items.filter(i => i.sentiment !== 'neutral').length;
+        if (hasSignal) { badge.textContent = hasSignal; badge.style.display = ''; }
+        countEl.textContent = `共 ${items.length} 条`;
+
+        if (!items.length) {
+            el.innerHTML = emptyHTML('暂无政策公告数据，点击「立即同步」抓取最新公告');
+            return;
+        }
+
+        // 按情绪分组
+        const groups = { positive: [], negative: [], neutral: [] };
+        items.forEach(i => (groups[i.sentiment || 'neutral'] || groups.neutral).push(i));
+
+        let html = '';
+        for (const [sent, label] of [['positive','利多政策'],['negative','利空政策'],['neutral','中性/数据']]) {
+            const group = groups[sent];
+            if (!group.length) continue;
+            const {cls} = SENTIMENT_MAP[sent];
+            html += `<div class="border-bottom py-2 px-3 bg-${cls}-subtle d-flex align-items-center gap-2">
+                <span class="badge bg-${cls}">${label}</span>
+                <small class="text-muted">${group.length} 条</small>
+            </div>`;
+            group.forEach(item => {
+                const srcColor = SOURCE_COLOR[item.source_key] || 'secondary';
+                const pub = (item.published_at || '').slice(0, 10);
+                const tags = item.sector_tags ? `<span class="text-muted small ms-2">→ ${item.sector_tags}</span>` : '';
+                const summary = item.llm_summary || '';
+                html += `<div class="px-3 py-2 border-bottom hover-bg">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div class="flex-grow-1">
+                            ${item.url
+                                ? `<a href="${item.url}" target="_blank" class="text-decoration-none text-dark fw-semibold small lh-sm">${item.title}</a>`
+                                : `<span class="fw-semibold small">${item.title}</span>`
+                            }
+                            ${summary ? `<div class="text-muted mt-1" style="font-size:11px">${summary}</div>` : ''}
+                            ${tags}
+                        </div>
+                        <div class="text-end text-nowrap" style="font-size:11px">
+                            <div><span class="badge bg-${srcColor}-subtle text-${srcColor}">${item.source_name}</span></div>
+                            <div class="text-muted mt-1">${pub}</div>
+                        </div>
+                    </div>
+                </div>`;
+            });
+        }
+        el.innerHTML = html || emptyHTML('暂无数据');
+    } catch (e) {
+        el.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+async function syncGovNews(btnEl) {
+    const orig = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>同步中...';
+    try {
+        const r = await API.post('/api/news/gov/sync', {});
+        let tries = 0;
+        const poll = setInterval(async () => {
+            tries++;
+            try {
+                const s = await API.get(`/api/agent/job/${r.job_id}`);
+                if (s.status === 'done' || s.status === 'error' || tries >= 60) {
+                    clearInterval(poll);
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = orig;
+                    _govLoaded = false;
+                    await loadGovNews();
+                }
+            } catch(e) { if (tries >= 60) { clearInterval(poll); btnEl.disabled=false; btnEl.innerHTML=orig; } }
+        }, 2000);
+    } catch (e) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = orig;
+    }
+}
+
+/* ── 公共 ── */
+function refreshAll() {
+    _poolLoaded = false;
+    // 刷新当前激活的标签
+    const activeTab = document.querySelector('#newsTabs .nav-link.active');
+    if (activeTab && activeTab.href.includes('tab-pool')) {
+        _poolLoaded = true;
+        loadPoolMapping();
+    } else if (activeTab && activeTab.href.includes('tab-news')) {
+        loadNews();
+    }
+    // 同步刷新自选股（后台）
+    if (!activeTab || !activeTab.href.includes('tab-pool')) {
+        _poolLoaded = true;
+        loadPoolMapping();
+    }
+}
+
+// 时间窗口切换：重置并刷新
+document.querySelectorAll('input[name="hours"]').forEach(r => {
+    r.addEventListener('change', () => {
+        _poolLoaded = false;
+        loadNews();
+        _poolLoaded = true;
+        loadPoolMapping();
+    });
+});
+
+// 初始加载
+loadNews();
+loadPoolMapping();  // 自选股后台并发加载（不等 tab 激活）
+_poolLoaded = true;
+</script>
+{% endblock %}

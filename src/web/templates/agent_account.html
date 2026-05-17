@@ -1,0 +1,541 @@
+{% extends "base.html" %}
+{% block title %}模拟账户{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-wallet2 me-2 text-primary"></i>模拟账户</h5>
+    <div class="d-flex align-items-center gap-2">
+        <small class="text-muted" id="last-refresh-time"></small>
+        <button class="btn btn-sm btn-outline-primary" onclick="syncRealPositions()" id="btn-sync-real">
+            <i class="bi bi-cloud-download"></i> 同步真实持仓
+        </button>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadAll()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<!-- Toast 容器 -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+    <div id="main-toast" class="toast align-items-center border-0" role="alert">
+        <div class="d-flex">
+            <div class="toast-body" id="toast-body">操作完成</div>
+            <button type="button" class="btn-close me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<!-- 卖出确认 Modal -->
+<div class="modal fade" id="sellModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="bi bi-exclamation-triangle text-danger me-2"></i>确认卖出</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>确定要市价卖出 <strong id="sell-code"></strong> 全部持仓吗？</p>
+                <input type="hidden" id="sell-ts-code">
+                <input type="hidden" id="sell-price">
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-danger btn-sm" id="btn-confirm-sell" onclick="confirmSell()">确认卖出</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 重置确认 Modal -->
+<div class="modal fade" id="resetModal" tabindex="-1">
+    <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h6 class="modal-title"><i class="bi bi-exclamation-octagon me-2"></i>危险操作</h6>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>重置将清空所有持仓和订单记录，账户恢复初始状态。</p>
+                <p class="text-danger fw-bold">此操作不可撤销，确定继续？</p>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-danger btn-sm" onclick="resetAccount()">确认重置</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 账户资产卡片 -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1">总资产</div>
+                <div class="fs-5 fw-bold" id="acc-total">--</div>
+                <div class="small text-muted" id="acc-initial">初始: --</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1">总盈亏</div>
+                <div class="fs-5 fw-bold" id="acc-profit-amount">--</div>
+                <div class="small fw-semibold" id="acc-profit-pct">--</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1">现金余额</div>
+                <div class="fs-5 fw-bold" id="acc-cash">--</div>
+                <div class="small text-muted" id="acc-cash-pct">占比: --</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1">持仓市值</div>
+                <div class="fs-5 fw-bold" id="acc-market-value">--</div>
+                <div class="small text-muted" id="acc-mv-pct">占比: --</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 净值曲线 + 手动买入 -->
+<div class="row g-3 mb-3">
+    <!-- 净值曲线 -->
+    <div class="col-12 col-lg-8">
+        <div class="card border-0 shadow-sm">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+                <span class="fw-semibold"><i class="bi bi-graph-up me-2 text-primary"></i>净值曲线</span>
+                <span class="badge bg-secondary" id="nav-current">当前净值: --</span>
+            </div>
+            <div class="card-body py-2">
+                <canvas id="navChart" style="height:200px"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- 手动买入 -->
+    <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-2">
+                <span class="fw-semibold"><i class="bi bi-plus-circle me-2 text-success"></i>手动买入</span>
+            </div>
+            <div class="card-body">
+                <div class="mb-2">
+                    <label class="form-label small text-muted mb-1">股票代码</label>
+                    <input type="text" class="form-control form-control-sm" id="buy-code"
+                           placeholder="000001.SZ" maxlength="12">
+                </div>
+                <div class="mb-2">
+                    <label class="form-label small text-muted mb-1">委托价（元）</label>
+                    <input type="number" class="form-control form-control-sm" id="buy-price"
+                           placeholder="0.00" step="0.01" min="0">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small text-muted mb-1">买入金额（元）</label>
+                    <input type="number" class="form-control form-control-sm" id="buy-amount"
+                           placeholder="10000" step="100" min="0">
+                </div>
+                <button class="btn btn-success w-100 btn-sm" id="btn-buy" onclick="submitBuy()">
+                    <i class="bi bi-cart-plus me-1"></i>买入
+                </button>
+                <div id="buy-result" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 当前持仓 -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold"><i class="bi bi-briefcase me-2 text-primary"></i>当前持仓</span>
+        <span class="badge bg-secondary" id="positions-count">0 只</span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">代码</th>
+                        <th>名称</th>
+                        <th>持仓量</th>
+                        <th>成本</th>
+                        <th>现价</th>
+                        <th>盈亏%</th>
+                        <th>市值</th>
+                        <th>买入日</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody id="positions-tbody">
+                    <tr><td colspan="9" class="text-center text-muted py-3">暂无持仓</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 历史订单（Tab切换） -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom py-2">
+        <div class="d-flex justify-content-between align-items-center">
+            <span class="fw-semibold"><i class="bi bi-receipt me-2 text-primary"></i>历史订单</span>
+            <ul class="nav nav-pills nav-sm gap-1" id="orders-tabs">
+                <li class="nav-item">
+                    <button class="nav-link py-0 px-2 active" onclick="switchOrderTab(1, this)">今日</button>
+                </li>
+                <li class="nav-item">
+                    <button class="nav-link py-0 px-2" onclick="switchOrderTab(7, this)">近7日</button>
+                </li>
+            </ul>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">时间</th>
+                        <th>代码</th>
+                        <th>方向</th>
+                        <th>价格</th>
+                        <th>数量</th>
+                        <th>金额</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody id="orders-tbody">
+                    <tr><td colspan="7" class="text-center text-muted py-3">暂无订单</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <!-- 分页 -->
+        <div class="d-flex justify-content-between align-items-center px-3 py-2 border-top">
+            <small class="text-muted" id="orders-page-info"></small>
+            <div class="d-flex gap-1">
+                <button class="btn btn-sm btn-outline-secondary" id="btn-prev-page" onclick="changePage(-1)" disabled>上一页</button>
+                <button class="btn btn-sm btn-outline-secondary" id="btn-next-page" onclick="changePage(1)" disabled>下一页</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 底部重置按钮 -->
+<div class="text-end mb-3">
+    <button class="btn btn-outline-danger btn-sm" data-bs-toggle="modal" data-bs-target="#resetModal">
+        <i class="bi bi-trash me-1"></i>重置模拟账户
+    </button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _navChart = null;
+let _allOrders = [];
+let _currentPage = 0;
+const PAGE_SIZE = 20;
+let _currentDays = 1;
+
+function showToast(type, msg) {
+    const toast = document.getElementById('main-toast');
+    const body = document.getElementById('toast-body');
+    toast.className = `toast align-items-center text-bg-${type} border-0`;
+    body.textContent = msg;
+    new bootstrap.Toast(toast, { delay: 3500 }).show();
+}
+
+function fmtMoney(v) {
+    if (v == null) return '--';
+    if (Math.abs(v) >= 1e4) return (v / 1e4).toFixed(2) + ' 万';
+    return Number(v).toFixed(2);
+}
+
+function fmtPct(v) {
+    if (v == null) return '--';
+    const sign = v >= 0 ? '+' : '';
+    return sign + Number(v).toFixed(2) + '%';
+}
+
+async function loadAccount() {
+    try {
+        const d = await API.get('/api/agent/account');
+        const initial = d.initial_capital || 1000000;
+        document.getElementById('acc-total').textContent = fmtMoney(d.total_assets) + ' 元';
+        document.getElementById('acc-initial').textContent = '初始: ' + fmtMoney(initial) + ' 元';
+
+        const profitEl = document.getElementById('acc-profit-amount');
+        const profitPctEl = document.getElementById('acc-profit-pct');
+        profitEl.textContent = (d.profit_amount >= 0 ? '+' : '') + fmtMoney(d.profit_amount) + ' 元';
+        profitEl.className = 'fs-5 fw-bold ' + (d.profit_amount >= 0 ? 'text-success' : 'text-danger');
+        profitPctEl.textContent = fmtPct(d.profit_pct);
+        profitPctEl.className = 'small fw-semibold ' + (d.profit_pct >= 0 ? 'text-success' : 'text-danger');
+
+        document.getElementById('acc-cash').textContent = fmtMoney(d.cash) + ' 元';
+        const cashPct = d.total_assets > 0 ? (d.cash / d.total_assets * 100).toFixed(1) : 0;
+        document.getElementById('acc-cash-pct').textContent = '占比: ' + cashPct + '%';
+
+        document.getElementById('acc-market-value').textContent = fmtMoney(d.market_value) + ' 元';
+        const mvPct = d.total_assets > 0 ? (d.market_value / d.total_assets * 100).toFixed(1) : 0;
+        document.getElementById('acc-mv-pct').textContent = '占比: ' + mvPct + '%';
+    } catch(e) {
+        console.error('加载账户失败:', e);
+    }
+}
+
+async function loadNavChart() {
+    try {
+        const d = await API.get('/api/agent/nav_history');
+        document.getElementById('nav-current').textContent = '当前净值: ' + (d.current_nav || 1).toFixed(4);
+        const navData = d.nav || [];
+        const labels = navData.map(n => n.date);
+        const values = navData.map(n => n.nav);
+
+        if (_navChart) _navChart.destroy();
+        const ctx = document.getElementById('navChart').getContext('2d');
+        _navChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: '策略净值',
+                    data: values,
+                    borderColor: '#0d6efd',
+                    backgroundColor: 'rgba(13,110,253,0.08)',
+                    borderWidth: 2,
+                    pointRadius: 2,
+                    fill: true,
+                    tension: 0.3,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: {
+                        min: 0.8,
+                        grid: { color: 'rgba(0,0,0,0.05)' },
+                        ticks: { callback: v => v.toFixed(3) }
+                    },
+                    x: {
+                        grid: { display: false },
+                        ticks: { maxTicksLimit: 8 }
+                    }
+                }
+            }
+        });
+    } catch(e) {
+        console.error('加载净值失败:', e);
+    }
+}
+
+async function loadPositions() {
+    try {
+        const d = await API.get('/api/agent/positions');
+        const positions = d.positions || [];
+        document.getElementById('positions-count').textContent = positions.length + ' 只';
+        const tbody = document.getElementById('positions-tbody');
+        if (positions.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted py-3">暂无持仓</td></tr>';
+            return;
+        }
+        tbody.innerHTML = positions.map(p => {
+            const pctClass = p.profit_pct >= 0 ? 'text-success' : 'text-danger';
+            const pctSign = p.profit_pct >= 0 ? '+' : '';
+            return `<tr>
+                <td class="ps-3 fw-mono small">${p.ts_code}</td>
+                <td>${p.name || '--'}</td>
+                <td>${p.volume != null ? p.volume.toLocaleString() : '--'}</td>
+                <td>${p.cost != null ? p.cost.toFixed(3) : '--'}</td>
+                <td>${p.current_price != null ? p.current_price.toFixed(3) : '--'}</td>
+                <td class="${pctClass} fw-semibold">${pctSign}${p.profit_pct != null ? p.profit_pct.toFixed(2) : '--'}%</td>
+                <td>${fmtMoney(p.market_value)}</td>
+                <td class="small text-muted">${p.buy_date || '--'}</td>
+                <td><button class="btn btn-danger btn-sm py-0 px-2" onclick="showSellModal('${p.ts_code}', ${p.current_price || 0})">卖出</button></td>
+            </tr>`;
+        }).join('');
+    } catch(e) {
+        console.error('加载持仓失败:', e);
+    }
+}
+
+async function loadOrders(days) {
+    try {
+        const d = await API.get(`/api/agent/orders?days=${days}`);
+        _allOrders = d.orders || [];
+        _currentPage = 0;
+        renderOrdersPage();
+    } catch(e) {
+        console.error('加载订单失败:', e);
+    }
+}
+
+function renderOrdersPage() {
+    const tbody = document.getElementById('orders-tbody');
+    const total = _allOrders.length;
+    const start = _currentPage * PAGE_SIZE;
+    const end = Math.min(start + PAGE_SIZE, total);
+    const page = _allOrders.slice(start, end);
+
+    document.getElementById('orders-page-info').textContent =
+        total === 0 ? '暂无订单' : `共 ${total} 条，第 ${start + 1}-${end} 条`;
+    document.getElementById('btn-prev-page').disabled = _currentPage === 0;
+    document.getElementById('btn-next-page').disabled = end >= total;
+
+    if (page.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted py-3">暂无订单</td></tr>';
+        return;
+    }
+    tbody.innerHTML = page.map(o => {
+        const sideBadge = o.side === 'buy'
+            ? '<span class="badge bg-success">买入</span>'
+            : '<span class="badge bg-danger">卖出</span>';
+        const statusBadge = o.status === 'filled'
+            ? '<span class="badge bg-success">成交</span>'
+            : o.status === 'cancelled'
+            ? '<span class="badge bg-secondary">撤单</span>'
+            : '<span class="badge bg-warning text-dark">待成交</span>';
+        return `<tr>
+            <td class="ps-3 small text-muted">${(o.created_at || '').slice(0, 16)}</td>
+            <td class="fw-mono small">${o.ts_code}</td>
+            <td>${sideBadge}</td>
+            <td>${o.price != null ? Number(o.price).toFixed(3) : '--'}</td>
+            <td>${o.volume != null ? o.volume.toLocaleString() : '--'}</td>
+            <td>${fmtMoney(o.amount)}</td>
+            <td>${statusBadge}</td>
+        </tr>`;
+    }).join('');
+}
+
+function changePage(delta) {
+    const maxPage = Math.ceil(_allOrders.length / PAGE_SIZE) - 1;
+    _currentPage = Math.max(0, Math.min(_currentPage + delta, maxPage));
+    renderOrdersPage();
+}
+
+function switchOrderTab(days, btnEl) {
+    _currentDays = days;
+    document.querySelectorAll('#orders-tabs .nav-link').forEach(b => b.classList.remove('active'));
+    btnEl.classList.add('active');
+    loadOrders(days);
+}
+
+function showSellModal(tsCode, price) {
+    document.getElementById('sell-code').textContent = tsCode;
+    document.getElementById('sell-ts-code').value = tsCode;
+    document.getElementById('sell-price').value = price;
+    new bootstrap.Modal(document.getElementById('sellModal')).show();
+}
+
+async function confirmSell() {
+    const tsCode = document.getElementById('sell-ts-code').value;
+    const price = parseFloat(document.getElementById('sell-price').value) || 0;
+    const btn = document.getElementById('btn-confirm-sell');
+    btn.disabled = true;
+    btn.textContent = '卖出中...';
+    try {
+        const r = await API.post('/api/agent/manual_trade', { ts_code: tsCode, side: 'sell', price, amount: 0 });
+        bootstrap.Modal.getInstance(document.getElementById('sellModal')).hide();
+        if (r.success) {
+            showToast('success', `卖出 ${tsCode} 成功，成交 ${r.volume} 股`);
+        } else {
+            showToast('danger', '卖出失败: ' + (r.msg || r.error || '未知错误'));
+        }
+        loadPositions();
+        loadOrders(_currentDays);
+        loadAccount();
+    } catch(e) {
+        showToast('danger', '请求失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.textContent = '确认卖出';
+    }
+}
+
+async function submitBuy() {
+    const tsCode = document.getElementById('buy-code').value.trim();
+    const price = parseFloat(document.getElementById('buy-price').value) || 0;
+    const amount = parseFloat(document.getElementById('buy-amount').value) || 0;
+    const resultEl = document.getElementById('buy-result');
+
+    if (!tsCode) { resultEl.innerHTML = '<div class="alert alert-warning py-1 small">请输入股票代码</div>'; return; }
+    if (price <= 0) { resultEl.innerHTML = '<div class="alert alert-warning py-1 small">请输入有效委托价</div>'; return; }
+    if (amount <= 0) { resultEl.innerHTML = '<div class="alert alert-warning py-1 small">请输入买入金额</div>'; return; }
+
+    const btn = document.getElementById('btn-buy');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>下单中...';
+    resultEl.innerHTML = '';
+
+    try {
+        const r = await API.post('/api/agent/manual_trade', { ts_code: tsCode, side: 'buy', price, amount });
+        if (r.success) {
+            resultEl.innerHTML = `<div class="alert alert-success py-1 small">买入成功：${r.volume} 股，金额 ${fmtMoney(r.amount)} 元</div>`;
+            document.getElementById('buy-code').value = '';
+            document.getElementById('buy-price').value = '';
+            document.getElementById('buy-amount').value = '';
+            loadPositions();
+            loadOrders(_currentDays);
+            loadAccount();
+        } else {
+            resultEl.innerHTML = `<div class="alert alert-danger py-1 small">买入失败：${r.msg || r.error || '未知错误'}</div>`;
+        }
+    } catch(e) {
+        resultEl.innerHTML = `<div class="alert alert-danger py-1 small">请求失败：${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cart-plus me-1"></i>买入';
+    }
+}
+
+async function syncRealPositions() {
+    const btn = document.getElementById('btn-sync-real');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>同步中...';
+    try {
+        const r = await API.post('/api/agent/sync-real-positions');
+        if (r.success) {
+            showToast('success', r.message + `（总资产 ${(r.total_assets/10000).toFixed(1)}万，现金 ${(r.cash/10000).toFixed(1)}万）`);
+            loadAll();
+        } else {
+            showToast('danger', '同步失败: ' + (r.error || '未知错误'));
+        }
+    } catch(e) {
+        showToast('danger', '同步失败: ' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-cloud-download"></i> 同步真实持仓';
+    }
+}
+
+async function resetAccount() {
+    try {
+        const r = await API.post('/api/agent/account/reset');
+        bootstrap.Modal.getInstance(document.getElementById('resetModal')).hide();
+        showToast(r.success ? 'success' : 'danger', r.message || r.error || '操作完成');
+        loadAll();
+    } catch(e) {
+        showToast('danger', '重置失败: ' + e.message);
+    }
+}
+
+function loadAll() {
+    document.getElementById('last-refresh-time').textContent = '刷新于 ' + new Date().toLocaleTimeString('zh-CN');
+    loadAccount();
+    loadNavChart();
+    loadPositions();
+    loadOrders(_currentDays);
+}
+
+// 初始化
+loadAll();
+setInterval(loadAll, 30000);
+</script>
+{% endblock %}

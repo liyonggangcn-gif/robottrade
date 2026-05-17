@@ -1,0 +1,60 @@
+# 量化选股 - Cron定时任务 (优化后)
+# 数据同步放到晚上，策略选股早3点
+
+# ========== 下午/晚上任务 (16:00后) ==========
+
+# A股日线数据同步 (16:00) - 收盘后立即同步
+0 16 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/fast_sync_today.py >> logs/sync_today.log 2>&1
+
+# 北向资金同步 (16:02)
+2 16 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/sync_free_data.py --northbound >> logs/sync_northbound.log 2>&1
+
+# 晚盘推送 (16:30) - 使用当日缓存
+30 16 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/evening_push.py >> logs/evening_push.log 2>&1
+
+# ClickHouse同步 (18:00) - 晚上同步
+0 18 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/sync_mysql_to_clickhouse.py >> logs/ch_sync.log 2>&1
+
+# 可转债数据同步 (18:30) - 补充cb_*数据
+30 18 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/sync_free_data.py --convertible >> logs/sync_cb.log 2>&1
+
+# 数据质量检查 (17:00)
+0 17 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/check_data_quality.py >> logs/data_quality.log 2>&1
+
+# ========== 凌晨任务 (00:05 / 05:00) ==========
+
+# 全策略选股 (00:05) - 读取昨日缓存数据，运行所有策略
+5 0 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/daily_alpha_run.py --skip-sync >> logs/daily_alpha.log 2>&1
+
+# 因子计算 (05:00) - 选股后计算因子
+0 5 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/run_factors.py >> logs/factors.log 2>&1
+
+# ROE回填 (05:15)
+15 5 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && DT=$(date +\%Y\%m\%d) && python scripts/backfill_roe.py >> logs/backfill_roe_${DT}.log 2>&1
+
+# ========== 上午任务 (08:00后) ==========
+
+# 早盘推送1: 多策略选股结果 (08:20)
+20 8 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/morning_push_1_strategy.py >> logs/morning_strategy.log 2>&1
+
+# 早盘推送2: AI操作方案 (08:25)
+25 8 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/morning_push_2_ai_plan.py >> logs/morning_ai_plan.log 2>&1
+
+# 早盘推送3: 市场+持仓+数据质量 (08:30)
+30 8 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/morning_push_3_market.py >> logs/morning_market.log 2>&1
+
+# 小市值周选股推送 (仅周一08:30)
+30 8 * * 1 cd /home/li/robottrade && . venv/bin/activate && python scripts/weekly_small_cap_push.py >> logs/weekly_small_cap.log 2>&1
+
+# ========== 实时任务 ==========
+
+# 每30分钟新闻采集 (交易时段)
+*/30 * * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python scripts/sync_gov_news.py >> logs/sync_news.log 2>&1
+
+# ========== 每周任务 ==========
+
+# 每周日 03:30 财务数据同步
+30 3 * * 0 cd /home/li/robottrade && . venv/bin/activate && python scripts/sync_financial_data.py >> logs/sync_financial.log 2>&1
+
+# 每周日 04:30 AI模型训练
+30 4 * * 0 cd /home/li/robottrade && . venv/bin/activate && python scripts/run_ai_model.py >> logs/run_ai_model.log 2>&1

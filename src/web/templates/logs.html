@@ -1,0 +1,228 @@
+{% extends "base.html" %}
+{% block title %}日志管理{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-terminal me-2 text-dark"></i>日志管理</h5>
+</div>
+
+<!-- 标签页 -->
+<ul class="nav nav-tabs mb-3" id="logsTabs">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-files">
+            <i class="bi bi-file-text me-1"></i>日志文件
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-live"
+                onclick="startLiveLog()">
+            <i class="bi bi-broadcast me-1"></i>实时日志
+            <span class="badge bg-danger ms-1" id="live-dot" style="display:none">live</span>
+        </button>
+    </li>
+    <li class="nav-item">
+        <a href="/messages" class="nav-link">
+            <i class="bi bi-chat-dots me-1"></i>推送消息
+        </a>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- 日志文件 -->
+    <div class="tab-pane fade show active" id="tab-files">
+        <div class="row g-3">
+            <!-- 文件列表 -->
+            <div class="col-md-4 col-lg-3">
+                <div class="card h-100">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <span class="small fw-bold">日志文件</span>
+                        <button class="btn btn-sm btn-link p-0" onclick="loadFileList()">
+                            <i class="bi bi-arrow-clockwise"></i>
+                        </button>
+                    </div>
+                    <div class="card-body p-0" id="file-list" style="max-height:calc(100vh - 280px);overflow-y:auto">
+                        <div class="text-center py-4 text-muted small">
+                            <span class="spinner-border spinner-border-sm me-1"></span>加载中...
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 日志内容 -->
+            <div class="col-md-8 col-lg-9">
+                <div class="card h-100">
+                    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                        <span class="small fw-bold" id="current-file-name">选择左侧文件查看内容</span>
+                        <div class="d-flex gap-2 align-items-center">
+                            <select class="form-select form-select-sm" id="lines-select" style="width:100px"
+                                    onchange="reloadContent()">
+                                <option value="100">后100行</option>
+                                <option value="200" selected>后200行</option>
+                                <option value="500">后500行</option>
+                                <option value="1000">后1000行</option>
+                            </select>
+                            <button class="btn btn-sm btn-outline-secondary" onclick="reloadContent()">
+                                <i class="bi bi-arrow-clockwise"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="log-content"><span class="text-muted">请从左侧选择日志文件</span></div>
+                    </div>
+                    <div class="card-footer bg-white py-1">
+                        <small class="text-muted" id="log-meta"></small>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 实时日志 -->
+    <div class="tab-pane fade" id="tab-live">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-broadcast me-1 text-danger"></i>实时日志流</span>
+                <div class="d-flex gap-2">
+                    <span class="small text-muted" id="ws-status">未连接</span>
+                    <button class="btn btn-sm btn-outline-danger" onclick="stopLiveLog()">
+                        <i class="bi bi-stop-circle me-1"></i>停止
+                    </button>
+                    <button class="btn btn-sm btn-outline-secondary" onclick="clearLiveLog()">
+                        <i class="bi bi-eraser me-1"></i>清空
+                    </button>
+                </div>
+            </div>
+            <div class="card-body p-0">
+                <div id="live-log"></div>
+            </div>
+        </div>
+    </div>
+
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentFile = null;
+let ws = null;
+let messagesLoaded = false;
+
+// ─── 日志文件列表 ──────────────────────────────────────────────────────────
+async function loadFileList() {
+    const list = document.getElementById('file-list');
+    list.innerHTML = '<div class="text-center py-3 text-muted small"><span class="spinner-border spinner-border-sm me-1"></span></div>';
+    try {
+        const d = await API.get('/api/logs/files');
+        const files = d.files || [];
+        if (!files.length) {
+            list.innerHTML = '<div class="text-center py-4 text-muted small">暂无日志文件</div>';
+            return;
+        }
+        list.innerHTML = files.map(f => `
+            <div class="p-2 border-bottom log-file-item" style="cursor:pointer"
+                 onclick="loadFileContent('${f.name}')"
+                 id="file-${f.name.replace(/\./g,'_')}">
+                <div class="small fw-medium text-truncate" title="${f.name}">${f.name}</div>
+                <div class="text-muted" style="font-size:11px">${f.modified} · ${f.size_kb}KB</div>
+            </div>`).join('');
+        // 自动加载最新日志
+        if (files.length && !currentFile) {
+            loadFileContent(files[0].name);
+        }
+    } catch (e) {
+        list.innerHTML = `<div class="p-2 text-danger small">${e.message}</div>`;
+    }
+}
+
+async function loadFileContent(filename) {
+    currentFile = filename;
+    const lines = document.getElementById('lines-select').value;
+    document.getElementById('current-file-name').textContent = filename;
+    document.getElementById('log-content').innerHTML = '<span class="text-muted">加载中...</span>';
+
+    // 高亮选中
+    document.querySelectorAll('.log-file-item').forEach(el => el.classList.remove('bg-primary', 'bg-opacity-10'));
+    const fileEl = document.getElementById('file-' + filename.replace(/\./g, '_'));
+    if (fileEl) fileEl.classList.add('bg-primary', 'bg-opacity-10');
+
+    try {
+        const d = await API.get(`/api/logs/content?file=${encodeURIComponent(filename)}&lines=${lines}`);
+        if (d.error) {
+            document.getElementById('log-content').innerHTML = `<span class="text-danger">${d.error}</span>`;
+            return;
+        }
+        const content = d.content || [];
+        document.getElementById('log-meta').textContent = `共 ${d.total_lines || 0} 行，显示最后 ${content.length} 行`;
+        if (!content.length) {
+            document.getElementById('log-content').innerHTML = '<span class="text-muted">(空文件)</span>';
+            return;
+        }
+        const html = content.map(line => colorLogLine(line)).join('\n');
+        const el = document.getElementById('log-content');
+        el.innerHTML = html;
+        el.scrollTop = el.scrollHeight;
+    } catch (e) {
+        document.getElementById('log-content').innerHTML = `<span class="text-danger">${e.message}</span>`;
+    }
+}
+
+function reloadContent() {
+    if (currentFile) loadFileContent(currentFile);
+}
+
+// ─── 实时日志 WebSocket ───────────────────────────────────────────────────
+function startLiveLog() {
+    if (ws && ws.readyState === WebSocket.OPEN) return;
+    const liveLog = document.getElementById('live-log');
+    const wsStatus = document.getElementById('ws-status');
+    const liveDot = document.getElementById('live-dot');
+
+    const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    ws = new WebSocket(`${proto}//${location.host}/ws/logs`);
+
+    ws.onopen = () => {
+        wsStatus.textContent = '已连接';
+        wsStatus.style.color = '#198754';
+        liveDot.style.display = '';
+    };
+    ws.onmessage = (e) => {
+        const line = document.createElement('div');
+        line.innerHTML = colorLogLine(e.data);
+        liveLog.appendChild(line);
+        // 最多保留1000行
+        while (liveLog.children.length > 1000) {
+            liveLog.removeChild(liveLog.firstChild);
+        }
+        liveLog.scrollTop = liveLog.scrollHeight;
+    };
+    ws.onclose = () => {
+        wsStatus.textContent = '已断开';
+        wsStatus.style.color = '#dc3545';
+        liveDot.style.display = 'none';
+    };
+    ws.onerror = () => {
+        wsStatus.textContent = '连接错误';
+        wsStatus.style.color = '#dc3545';
+    };
+}
+
+function stopLiveLog() {
+    if (ws) {
+        ws.close();
+        ws = null;
+    }
+}
+
+function clearLiveLog() {
+    document.getElementById('live-log').innerHTML = '';
+}
+
+// 切换到实时Tab时自动断开（清理）
+document.getElementById('logsTabs').addEventListener('hide.bs.tab', e => {
+    if (e.target.dataset.bsTarget === '#tab-live') stopLiveLog();
+});
+
+loadFileList();
+</script>
+{% endblock %}

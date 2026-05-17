@@ -1,0 +1,350 @@
+{% extends "base.html" %}
+{% block title %}股票推荐{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-stars me-2 text-warning"></i>股票推荐</h5>
+    <button class="btn btn-sm btn-outline-primary" onclick="loadAll()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<!-- 标签页切换 -->
+<ul class="nav nav-tabs mb-3" id="picksTabs">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-today">
+            <i class="bi bi-stars me-1"></i>今日推荐
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-holding" onclick="loadTrack()">
+            <i class="bi bi-briefcase me-1"></i>持有追踪
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-sold">
+            <i class="bi bi-graph-up-arrow me-1"></i>历史回报
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-small-cap" onclick="loadSmallCap()">
+            <i class="bi bi-currency-yen me-1"></i>本周小市值
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- 今日推荐 -->
+    <div class="tab-pane fade show active" id="tab-today">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span id="picks-title">今日推荐</span>
+                <small class="text-muted" id="picks-count"></small>
+            </div>
+            <div class="card-body p-0" id="picks-container">
+                <div class="text-center py-5 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 持有追踪 -->
+    <div class="tab-pane fade" id="tab-holding">
+        <div class="card" id="holding-card">
+            <div class="card-header bg-white">
+                <i class="bi bi-briefcase me-1"></i>当前持有推荐追踪
+            </div>
+            <div class="card-body p-0" id="holding-container">
+                <div class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 历史回报 -->
+    <div class="tab-pane fade" id="tab-sold">
+        <!-- 统计摘要 -->
+        <div class="row g-3 mb-3" id="track-stats">
+            <div class="col-4">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <div class="text-muted small">总交易次数</div>
+                        <div class="fw-bold fs-5" id="stat-total">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <div class="text-muted small">胜率</div>
+                        <div class="fw-bold fs-5" id="stat-winrate">—</div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-4">
+                <div class="card text-center">
+                    <div class="card-body py-2">
+                        <div class="text-muted small">平均收益</div>
+                        <div class="fw-bold fs-5" id="stat-avg">—</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header bg-white">
+                <i class="bi bi-graph-up-arrow me-1"></i>历史推荐回报（最近20条）
+            </div>
+            <div class="card-body p-0" id="sold-container">
+                <div class="text-center py-4 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 本周小市值 -->
+    <div class="tab-pane fade" id="tab-small-cap">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-calendar-week me-1 text-primary"></i>本周小市值三策略
+                    <small class="text-muted ms-2" id="small-cap-date"></small>
+                </span>
+                <button class="btn btn-sm btn-outline-primary" id="small-cap-run-btn" onclick="runSmallCap(this)">
+                    <i class="bi bi-play-circle me-1"></i>重新运行
+                </button>
+            </div>
+            <div class="card-body" id="small-cap-content">
+                <div class="text-center py-5 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let trackLoaded = false;
+let smallCapLoaded = false;
+
+// 加载今日推荐
+async function loadPicks() {
+    const container = document.getElementById('picks-container');
+    container.innerHTML = loadingHTML();
+    try {
+        const d = await API.get('/api/picks');
+        document.getElementById('picks-title').textContent = `今日推荐 ${d.date ? '（' + d.date + '）' : ''}`;
+        document.getElementById('picks-count').textContent = `共 ${d.total || 0} 只`;
+
+        if (!d.picks || !d.picks.length) {
+            container.innerHTML = emptyHTML('暂无推荐数据，请先运行策略选股');
+            return;
+        }
+
+        // 找到评分字段
+        const sample = d.picks[0];
+        const hasAI = 'ai_score' in sample;
+        const hasEvent = 'event_score' in sample;
+        const hasFund = 'fund_score' in sample || 'fundamental_score' in sample;
+        const scoreCol = 'final_score' in sample ? 'final_score' : 'score' in sample ? 'score' : null;
+        const nameCol = 'name' in sample ? 'name' : 'stock_name' in sample ? 'stock_name' : null;
+        const codeCol = 'ts_code' in sample ? 'ts_code' : 'code' in sample ? 'code' : null;
+
+        const rows = d.picks.map((p, i) => {
+            const score = scoreCol ? parseFloat(p[scoreCol]) : 0;
+            const aiScore = hasAI ? parseFloat(p.ai_score) : null;
+            const eventScore = hasEvent ? parseFloat(p.event_score) : null;
+            const fundScore = hasFund ? parseFloat(p.fund_score || p.fundamental_score) : null;
+            const concept = p.concept || p.concept_name || p.concepts || '';
+            const industry = p.industry || '';
+
+            return `<tr>
+                <td class="text-muted">${i + 1}</td>
+                <td><strong>${nameCol ? p[nameCol] : '—'}</strong></td>
+                <td><code class="text-primary small">${codeCol ? p[codeCol] : '—'}</code></td>
+                <td>${scoreCol ? scoreBar(score, 100) : '—'}</td>
+                ${hasAI ? `<td class="text-center"><span class="badge bg-primary">${(aiScore||0).toFixed(1)}</span></td>` : ''}
+                ${hasEvent ? `<td class="text-center"><span class="badge bg-warning text-dark">${(eventScore||0).toFixed(1)}</span></td>` : ''}
+                ${hasFund ? `<td class="text-center"><span class="badge bg-success">${(fundScore||0).toFixed(1)}</span></td>` : ''}
+                <td class="text-muted small">${industry}</td>
+                <td class="text-muted small" style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${concept}</td>
+            </tr>`;
+        }).join('');
+
+        container.innerHTML = `
+            <div class="table-responsive">
+                <table class="table table-sm table-hover mb-0">
+                    <thead class="table-light sticky-top">
+                        <tr>
+                            <th>#</th>
+                            <th>名称</th>
+                            <th>代码</th>
+                            <th style="min-width:140px">综合评分</th>
+                            ${hasAI ? '<th class="text-center">AI分</th>' : ''}
+                            ${hasEvent ? '<th class="text-center">事件分</th>' : ''}
+                            ${hasFund ? '<th class="text-center">基本面</th>' : ''}
+                            <th>行业</th>
+                            <th>概念</th>
+                        </tr>
+                    </thead>
+                    <tbody>${rows}</tbody>
+                </table>
+            </div>`;
+    } catch (e) {
+        container.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+// 加载推荐追踪
+async function loadTrack() {
+    if (trackLoaded) return;
+    trackLoaded = true;
+    const holdingContainer = document.getElementById('holding-container');
+    const soldContainer = document.getElementById('sold-container');
+    holdingContainer.innerHTML = loadingHTML();
+    soldContainer.innerHTML = loadingHTML();
+    try {
+        const d = await API.get('/api/picks/track');
+
+        // 统计数据
+        const stats = d.stats || {};
+        document.getElementById('stat-total').textContent = stats.total_trades || 0;
+        document.getElementById('stat-winrate').innerHTML = formatPnl(stats.win_rate || 0, '%').replace('profit','text-success').replace('loss','text-danger');
+        document.getElementById('stat-avg').innerHTML = formatPnl(stats.avg_profit || 0, '%');
+
+        // 持有中
+        if (!d.holding || !d.holding.length) {
+            holdingContainer.innerHTML = emptyHTML('当前无持有推荐');
+        } else {
+            const rows = d.holding.map(p => `<tr>
+                <td><strong>${p.name || ''}</strong></td>
+                <td><code class="small text-primary">${p.ts_code || ''}</code></td>
+                <td>${p.buy_date || ''}</td>
+                <td>¥${parseFloat(p.buy_price || 0).toFixed(2)}</td>
+                <td>${p.holding_days || '-'} 天</td>
+                <td><span class="badge bg-info">持有中</span></td>
+            </tr>`).join('');
+            holdingContainer.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>名称</th><th>代码</th><th>买入日期</th><th>买入价</th><th>持有天数</th><th>状态</th></tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
+        }
+
+        // 已卖出
+        if (!d.sold || !d.sold.length) {
+            soldContainer.innerHTML = emptyHTML('暂无历史推荐数据');
+        } else {
+            const rows = d.sold.map(p => {
+                const pct = parseFloat(p.profit_pct || 0);
+                return `<tr>
+                    <td><strong>${p.name || ''}</strong></td>
+                    <td><code class="small text-primary">${p.ts_code || ''}</code></td>
+                    <td>${p.buy_date || ''}</td>
+                    <td>¥${parseFloat(p.buy_price || 0).toFixed(2)}</td>
+                    <td>${p.sell_date || ''}</td>
+                    <td>¥${parseFloat(p.sell_price || 0).toFixed(2)}</td>
+                    <td>${formatPnl(pct, '%')}</td>
+                    <td class="text-muted small">${p.holding_days || '-'} 天</td>
+                </tr>`;
+            }).join('');
+            soldContainer.innerHTML = `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr><th>名称</th><th>代码</th><th>买入日期</th><th>买入价</th><th>卖出日期</th><th>卖出价</th><th>盈亏</th><th>持仓天数</th></tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                </div>`;
+        }
+    } catch (e) {
+        holdingContainer.innerHTML = errorHTML('加载失败：' + e.message);
+        soldContainer.innerHTML = '';
+    }
+}
+
+// 加载本周小市值
+async function loadSmallCap() {
+    if (smallCapLoaded) return;
+    smallCapLoaded = true;
+    const container = document.getElementById('small-cap-content');
+    container.innerHTML = loadingHTML();
+    try {
+        const d = await API.get('/api/picks/small_cap');
+        if (d.error) {
+            container.innerHTML = emptyHTML(d.error);
+            return;
+        }
+        document.getElementById('small-cap-date').textContent = d.date ? `数据日期: ${d.date}` : '';
+        // 将 Markdown 文本渲染为 HTML（简单处理）
+        const raw = (d.content || '').replace(/^生成时间:.*\n\n?/m, '');
+        const html = raw
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/^> (.*)/gm, '<div class="text-muted small ps-2 border-start border-3 mb-1">$1</div>')
+            .replace(/^---$/gm, '<hr class="my-2">')
+            .replace(/^#{1,3} (.*)/gm, '<h6 class="fw-bold mt-2 mb-1">$1</h6>')
+            .replace(/^(\d+\. .+)$/gm, '<div class="ps-2 mb-1">$1</div>')
+            .replace(/^(⚠️.*)/gm, '<div class="text-warning small">$1</div>')
+            .replace(/\n/g, '<br>');
+        container.innerHTML = `<div class="px-1" style="font-size:.88rem;line-height:1.7">${html}</div>`;
+    } catch (e) {
+        container.innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+async function runSmallCap(btnEl) {
+    const orig = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>运行中...';
+    try {
+        const r = await API.post('/api/picks/small_cap/run', {});
+        if (r.error) { btnEl.disabled = false; btnEl.innerHTML = orig; return; }
+        let tries = 0;
+        const poll = setInterval(async () => {
+            tries++;
+            try {
+                const s = await API.get(`/api/agent/job/${r.job_id}`);
+                if (s.status === 'done' || s.status === 'error' || tries >= 60) {
+                    clearInterval(poll);
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = orig;
+                    smallCapLoaded = false;
+                    await loadSmallCap();
+                }
+            } catch(e) { if (tries >= 60) { clearInterval(poll); btnEl.disabled=false; btnEl.innerHTML=orig; } }
+        }, 2000);
+    } catch (e) {
+        btnEl.disabled = false;
+        btnEl.innerHTML = orig;
+    }
+}
+
+function loadAll() {
+    trackLoaded = false;
+    smallCapLoaded = false;
+    loadPicks();
+    loadTrack();
+}
+
+// 切换Tab时自动加载
+document.getElementById('picksTabs').addEventListener('click', e => {
+    const target = e.target.dataset.bsTarget;
+    if (target === '#tab-holding' || target === '#tab-sold') {
+        loadTrack();
+    }
+    if (target === '#tab-small-cap') {
+        loadSmallCap();
+    }
+});
+
+loadPicks();
+</script>
+{% endblock %}

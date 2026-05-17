@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+{% block title %}消息中心{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-envelope me-2 text-info"></i>消息中心</h5>
+    <button class="btn btn-sm btn-outline-primary" onclick="loadMessages()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<!-- 统计卡片 -->
+<div class="row g-3 mb-4" id="stats-cards">
+    <div class="col-md-3 col-6">
+        <div class="card text-center bg-primary text-white">
+            <div class="card-body py-3">
+                <div class="small opacity-75">总消息数</div>
+                <div class="fw-bold fs-4" id="stat-total">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card text-center bg-success text-white">
+            <div class="card-body py-3">
+                <div class="small opacity-75">成功率</div>
+                <div class="fw-bold fs-4" id="stat-success">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card text-center bg-info text-white">
+            <div class="card-body py-3">
+                <div class="small opacity-75">最近7天</div>
+                <div class="fw-bold fs-4" id="stat-week">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card text-center bg-warning text-dark">
+            <div class="card-body py-3">
+                <div class="small opacity-75">失败数</div>
+                <div class="fw-bold fs-4" id="stat-failed">—</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 筛选 -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">消息类型</label>
+                <select class="form-select" id="filter-type" onchange="loadMessages()">
+                    <option value="">全部</option>
+                    <option value="risk_control">风控止损</option>
+                    <option value="risk_watch">风控预警</option>
+                    <option value="buy_signal_analysis">买入信号分析</option>
+                    <option value="agent_risk">Agent风控</option>
+                    <option value="morning_push">早盘推送</option>
+                    <option value="evening_push">晚盘推送</option>
+                    <option value="daily_alpha_run">量化日报</option>
+                    <option value="agent_decision">Agent决策</option>
+                    <option value="analysis">LLM分析</option>
+                    <option value="review">复盘记录</option>
+                    <option value="error_alert">错误告警</option>
+                    <option value="strategy_center">策略中心</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">时间范围</label>
+                <select class="form-select" id="filter-days" onchange="loadMessages()">
+                    <option value="7">最近7天</option>
+                    <option value="30" selected>最近30天</option>
+                    <option value="90">最近90天</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">显示数量</label>
+                <select class="form-select" id="filter-limit" onchange="loadMessages()">
+                    <option value="50">50条</option>
+                    <option value="100" selected>100条</option>
+                    <option value="200">200条</option>
+                </select>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 消息列表 -->
+<div class="card">
+    <div class="card-header bg-white d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-list-ul me-1"></i>消息记录</span>
+        <small class="text-muted" id="msg-count">共 0 条</small>
+    </div>
+    <div class="card-body p-0" id="messages-container">
+        <div class="text-center py-5 text-muted">
+            <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+        </div>
+    </div>
+</div>
+
+<script>
+const typeNames = {
+    'morning_push': '早盘',
+    'evening_push': '晚盘',
+    'agent_decision': 'Agent决策',
+    'agent_risk': '风控',
+    'agent_trade': '交易',
+    'daily_alpha_run': '量化日报',
+    'strategy_center': '策略中心',
+    'risk_control': '风控',
+    'risk_watch': '观察',
+    'error_alert': '错误'
+};
+
+const typeColors = {
+    'morning_push': 'bg-primary',
+    'evening_push': 'bg-secondary',
+    'agent_decision': 'bg-info',
+    'agent_risk': 'bg-danger',
+    'daily_alpha_run': 'bg-success',
+    'strategy_center': 'bg-warning text-dark'
+};
+
+function loadMessages() {
+    const msgType = document.getElementById('filter-type').value;
+    const days = parseInt(document.getElementById('filter-days').value) || 30;
+    const limit = parseInt(document.getElementById('filter-limit').value) || 100;
+    
+    let url = `/api/messages/history?days=${days}&limit=${limit}`;
+    if (msgType) url += `&msg_type=${msgType}`;
+    
+    fetch(url)
+        .then(r => r.json())
+        .then(data => {
+            renderMessages(data);
+        })
+        .catch(err => {
+            document.getElementById('messages-container').innerHTML = 
+                `<div class="text-center py-5 text-danger">加载失败: ${err}</div>`;
+        });
+}
+
+function renderMessages(data) {
+    const container = document.getElementById('messages-container');
+    const messages = data.messages || [];
+    
+    document.getElementById('msg-count').textContent = `共 ${data.count || 0} 条`;
+    
+    // 更新统计
+    const successCount = messages.filter(m => m.send_status === 'success').length;
+    const failedCount = messages.filter(m => m.send_status === 'failed').length;
+    document.getElementById('stat-total').textContent = messages.length;
+    document.getElementById('stat-success').textContent = messages.length > 0 
+        ? Math.round(successCount / messages.length * 100) + '%' 
+        : '—';
+    document.getElementById('stat-week').textContent = '—';
+    document.getElementById('stat-failed').textContent = failedCount;
+    
+    if (messages.length === 0) {
+        container.innerHTML = '<div class="text-center py-5 text-muted">暂无消息记录</div>';
+        return;
+    }
+    
+    let html = '<div class="list-group list-group-flush">';
+    
+    messages.forEach(msg => {
+        const typeName = typeNames[msg.message_type] || msg.message_type || '未知';
+        const typeColor = typeColors[msg.message_type] || 'bg-secondary';
+        const statusColor = msg.send_status === 'success' ? 'text-success' : 'text-danger';
+        const statusIcon = msg.send_status === 'success' ? 'check-circle-fill' : 'x-circle-fill';
+        
+        html += `<div class="list-group-item">
+            <div class="d-flex justify-content-between align-items-start mb-2">
+                <div>
+                    <span class="badge ${typeColor} me-2">${typeName}</span>
+                    <span class="fw-bold">${msg.title || '无标题'}</span>
+                </div>
+                <div class="text-end">
+                    <i class="bi bi-${statusIcon} ${statusColor} me-1"></i>
+                    <small class="text-muted">${formatTime(msg.send_time)}</small>
+                </div>
+            </div>
+            <div class="text-muted small mb-2" style="max-height:80px;overflow:hidden;">${escapeHtml(msg.content || '')}</div>
+            ${msg.error_message ? `<div class="text-danger small"><i class="bi bi-exclamation-triangle me-1"></i>${escapeHtml(msg.error_message)}</div>` : ''}
+        </div>`;
+    });
+    
+    html += '</div>';
+    container.innerHTML = html;
+}
+
+function formatTime(timeStr) {
+    if (!timeStr) return '—';
+    try {
+        const d = new Date(timeStr);
+        return d.toLocaleString('zh-CN', {
+            month: '2-digit', day: '2-digit',
+            hour: '2-digit', minute: '2-digit'
+        });
+    } catch {
+        return timeStr;
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;')
+        .replace(/\n/g, '<br>');
+}
+
+// 初始加载
+loadMessages();
+</script>
+{% endblock %}

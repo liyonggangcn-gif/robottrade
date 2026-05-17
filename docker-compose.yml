@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  stock-analysis:
+    build: .
+    container_name: stock-analysis-container
+    restart: always
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_PORT=8501
+      - STREAMLIT_HOST=0.0.0.0

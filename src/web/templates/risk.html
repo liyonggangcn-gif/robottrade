@@ -1,0 +1,238 @@
+{% extends "base.html" %}
+{% block title %}风控中心{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div class="d-flex align-items-center gap-2">
+        <h5 class="fw-bold mb-0"><i class="bi bi-shield-check me-2 text-warning"></i>风控中心</h5>
+        <a href="/positions" class="btn btn-sm btn-outline-success"><i class="bi bi-briefcase me-1"></i>持仓明细</a>
+    </div>
+    <button class="btn btn-outline-warning btn-sm" onclick="refreshRisk()">
+        <i class="bi bi-arrow-clockwise"></i> 刷新
+    </button>
+</div>
+
+<!-- 风险概览 -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card stat-card {% if risk_level == '高' %}danger{% elif risk_level == '中' %}warning{% else %}success{% endif %} h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-exclamation-triangle me-1"></i>风险等级</div>
+                <div class="fw-bold fs-4">
+                    {% if risk_level == '高' %}<span class="text-danger">🔴 高风险</span>
+                    {% elif risk_level == '中' %}<span class="text-warning">🟡 中风险</span>
+                    {% else %}<span class="text-success">🟢 低风险</span>
+                    {% endif %}
+                </div>
+                <div class="text-muted small mt-1">{{ risk_summary }}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card primary h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-briefcase me-1"></i>持仓数量</div>
+                <div class="fw-bold fs-4">{{ position_count }}</div>
+                <div class="text-muted small mt-1">只</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card {% if total_pnl >= 0 %}danger{% else %}success{% endif %} h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-currency-exchange me-1"></i>浮动盈亏</div>
+                <div class="fw-bold fs-4 {% if total_pnl >= 0 %}profit{% else %}loss{% endif %}">
+                    {{ "+" if total_pnl >= 0 else "" }}{{ "%.2f"|format(total_pnl) }}%
+                </div>
+                <div class="text-muted small mt-1">{{ total_pnl_amount }}元</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card info h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-graph-up me-1"></i>胜率</div>
+                <div class="fw-bold fs-4">{{ "%.1f"|format(win_rate) }}%</div>
+                <div class="text-muted small mt-1">{{ win_count }}赚/{{ loss_count }}亏</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 止损信号 -->
+{% if stop_loss_signals %}
+<div class="card mb-4 border-danger">
+    <div class="card-header bg-danger text-white">
+        <i class="bi bi-exclamation-octagon me-1"></i>
+        <strong>🔴 止损信号 ({{ stop_loss_signals|length }}只)</strong>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>代码</th>
+                        <th>名称</th>
+                        <th>当前盈亏</th>
+                        <th>止损线</th>
+                        <th>持仓天数</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in stop_loss_signals %}
+                    <tr class="table-danger">
+                        <td><code>{{ s.ts_code }}</code></td>
+                        <td><strong>{{ s.name }}</strong></td>
+                        <td><span class="badge bg-danger">{{ "%.1f"|format(s.profit_pct) }}%</span></td>
+                        <td>{{ "%.1f"|format(s.stop_loss_pct) }}%</td>
+                        <td>{{ s.holding_days }}天</td>
+                        <td>
+                            <button class="btn btn-sm btn-danger" onclick="executeSell('{{ s.ts_code }}', 'STOP_LOSS')">
+                                <i class="bi bi-box-arrow-right"></i> 止损
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 止盈信号 -->
+{% if take_profit_signals %}
+<div class="card mb-4 border-warning">
+    <div class="card-header bg-warning text-dark">
+        <i class="bi bi-cash-stack me-1"></i>
+        <strong>🟠 止盈信号 ({{ take_profit_signals|length }}只)</strong>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>代码</th>
+                        <th>名称</th>
+                        <th>当前盈利</th>
+                        <th>止盈线</th>
+                        <th>持仓天数</th>
+                        <th>操作</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in take_profit_signals %}
+                    <tr class="table-warning">
+                        <td><code>{{ s.ts_code }}</code></td>
+                        <td><strong>{{ s.name }}</strong></td>
+                        <td><span class="badge bg-success">{{ "%.1f"|format(s.profit_pct) }}%</span></td>
+                        <td>{{ "%.1f"|format(s.stop_gain_pct) }}%</td>
+                        <td>{{ s.holding_days }}天</td>
+                        <td>
+                            <button class="btn btn-sm btn-warning" onclick="executeSell('{{ s.ts_code }}', 'TAKE_PROFIT')">
+                                <i class="bi bi-box-arrow-right"></i> 止盈
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- 全部持仓 -->
+<div class="card">
+    <div class="card-header bg-white">
+        <i class="bi bi-list-ul me-1 text-info"></i>
+        <strong>全部持仓</strong>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>代码</th>
+                        <th>名称</th>
+                        <th>持仓数量</th>
+                        <th>持仓成本</th>
+                        <th>当前价</th>
+                        <th>浮动盈亏</th>
+                        <th>盈亏%</th>
+                        <th>持仓天数</th>
+                        <th>止损价</th>
+                        <th>风险等级</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in positions %}
+                    <tr class="{% if p.risk_level == 'critical' %}table-danger{% elif p.risk_level == 'warning' %}table-warning{% endif %}">
+                        <td><code>{{ p.ts_code }}</code></td>
+                        <td><strong>{{ p.name }}</strong></td>
+                        <td>{{ p.shares }}股</td>
+                        <td>{{ "%.2f"|format(p.avg_cost) }}</td>
+                        <td>{{ "%.2f"|format(p.current_price) }}</td>
+                        <td class="{% if p.profit_pct >= 0 %}profit{% else %}loss{% endif %}">
+                            {{ "+" if p.profit_pct >= 0 else "" }}{{ "%.2f"|format(p.profit_pct) }}%
+                        </td>
+                        <td>
+                            {% if p.profit_pct >= 0 %}
+                            <span class="badge bg-danger">{{ "+%.2f"|format(p.profit_pct) }}</span>
+                            {% else %}
+                            <span class="badge bg-success">{{ "%.2f"|format(p.profit_pct) }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ p.holding_days }}天</td>
+                        <td>{{ "%.2f"|format(p.stop_loss_price or 0) }}</td>
+                        <td>
+                            {% if p.risk_level == 'critical' %}
+                            <span class="badge bg-danger">危险</span>
+                            {% elif p.risk_level == 'warning' %}
+                            <span class="badge bg-warning text-dark">注意</span>
+                            {% elif p.risk_level == 'high' %}
+                            <span class="badge bg-orange text-dark">偏高</span>
+                            {% else %}
+                            <span class="badge bg-success">正常</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="10" class="text-center text-muted py-4">
+                            <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                            暂无持仓
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function refreshRisk() {
+    window.location.reload();
+}
+
+async function executeSell(tsCode, signalType) {
+    if (!confirm(`确认对 ${tsCode} 执行 ${signalType === 'STOP_LOSS' ? '止损' : '止盈'} 操作？`)) return;
+    
+    try {
+        const res = await API.post('/api/execution/sell', { ts_code: tsCode, signal: signalType });
+        if (res.success) {
+            alert('卖出订单已提交');
+            refreshRisk();
+        } else {
+            alert('操作失败: ' + res.error);
+        }
+    } catch (e) {
+        alert('操作失败: ' + e.message);
+    }
+}
+</script>
+{% endblock %}

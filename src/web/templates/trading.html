@@ -1,0 +1,605 @@
+{% extends "base.html" %}
+{% block title %}交易中心{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0">
+        <i class="bi bi-shop me-2 text-primary"></i>交易中心
+    </h5>
+    <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-danger" onclick="runFullWorkflow()">
+            <i class="bi bi-lightning-charge me-1"></i>一键执行
+        </button>
+        <button class="btn btn-sm btn-outline-primary" onclick="loadDashboard()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
+</div>
+
+<!-- 账户概览卡片 -->
+<div class="row g-3 mb-4" id="account-cards">
+    <div class="col-6 col-md-2">
+        <div class="card text-center border-primary">
+            <div class="card-body py-2">
+                <div class="text-muted small">账户总值</div>
+                <div class="fw-bold fs-5" id="acct-total">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center border-success">
+            <div class="card-body py-2">
+                <div class="text-muted small">持仓市值</div>
+                <div class="fw-bold fs-5" id="acct-market">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center border-info">
+            <div class="card-body py-2">
+                <div class="text-muted small">可用现金</div>
+                <div class="fw-bold fs-5" id="acct-cash">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center border-warning">
+            <div class="card-body py-2">
+                <div class="text-muted small">总盈亏</div>
+                <div class="fw-bold fs-5" id="acct-pnl">—</div>
+                <div class="small text-muted" id="acct-pnl-pct">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="text-muted small">持仓数量</div>
+                <div class="fw-bold fs-5" id="acct-count">—</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-2">
+        <div class="card text-center">
+            <div class="card-body py-2">
+                <div class="text-muted small">风控状态</div>
+                <div class="fw-bold fs-5" id="risk-level">—</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 操作建议快捷卡片 -->
+<div class="row g-3 mb-4" id="action-cards">
+    <div class="col-6 col-md-3">
+        <div class="card text-center border-danger cursor-pointer" onclick="showSection('alerts')">
+            <div class="card-body py-3">
+                <div class="text-danger small fw-bold"><i class="bi bi-exclamation-triangle-fill me-1"></i>止损预警</div>
+                <div class="fw-bold fs-3 text-danger" id="cnt-alerts">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center border-success cursor-pointer" onclick="showSection('buy')">
+            <div class="card-body py-3">
+                <div class="text-success small fw-bold"><i class="bi bi-cart-plus me-1"></i>建议买入</div>
+                <div class="fw-bold fs-3 text-success" id="cnt-buy">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center border-warning cursor-pointer" onclick="showSection('sell')">
+            <div class="card-body py-3">
+                <div class="text-warning small fw-bold"><i class="bi bi-cart-dash me-1"></i>建议卖出</div>
+                <div class="fw-bold fs-3 text-warning" id="cnt-sell">0</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card text-center border-secondary cursor-pointer" onclick="showSection('hold')">
+            <div class="card-body py-3">
+                <div class="text-secondary small fw-bold"><i class="bi bi-hand-thumbs-up me-1"></i>继续持有</div>
+                <div class="fw-bold fs-3 text-secondary" id="cnt-hold">0</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 标签页 -->
+<ul class="nav nav-tabs mb-3" id="tradingTabs">
+    <li class="nav-item">
+        <button class="nav-link active" data-bs-toggle="tab" data-bs-target="#tab-positions">
+            <i class="bi bi-briefcase me-1"></i>持仓明细
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-picks">
+            <i class="bi bi-stars me-1"></i>今日选股
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-recommendations">
+            <i class="bi bi-clipboard-check me-1"></i>操作建议
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-risk">
+            <i class="bi bi-shield-check me-1"></i>风控中心
+        </button>
+    </li>
+    <li class="nav-item">
+        <button class="nav-link" data-bs-toggle="tab" data-bs-target="#tab-orders">
+            <i class="bi bi-receipt me-1"></i>交易记录
+        </button>
+    </li>
+</ul>
+
+<div class="tab-content">
+    <!-- 持仓明细 -->
+    <div class="tab-pane fade show active" id="tab-positions">
+        <div class="card">
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>代码</th>
+                                <th>名称</th>
+                                <th>持仓</th>
+                                <th>成本</th>
+                                <th>现价</th>
+                                <th>市值</th>
+                                <th>盈亏</th>
+                                <th>盈亏%</th>
+                                <th>止损价</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="positions-tbody">
+                            <tr><td colspan="10" class="text-center py-4 text-muted">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 今日选股 -->
+    <div class="tab-pane fade" id="tab-picks">
+        <div class="card">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-stars me-1 text-warning"></i>今日推荐股票</span>
+                <button class="btn btn-sm btn-outline-primary" onclick="loadDashboard()">
+                    <i class="bi bi-arrow-clockwise"></i>
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th>#</th>
+                                <th>代码</th>
+                                <th>名称</th>
+                                <th>综合评分</th>
+                                <th>AI评分</th>
+                                <th>事件评分</th>
+                                <th>基本面</th>
+                                <th>轨道</th>
+                                <th>操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="picks-tbody">
+                            <tr><td colspan="9" class="text-center py-4 text-muted">加载中...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 操作建议 -->
+    <div class="tab-pane fade" id="tab-recommendations">
+        <!-- 止损预警 -->
+        <div class="card border-danger mb-3" id="section-alerts">
+            <div class="card-header bg-danger text-white fw-bold">
+                <i class="bi bi-exclamation-triangle-fill me-2"></i>止损预警
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>代码</th><th>名称</th><th>亏损</th><th>建议</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="alerts-tbody">
+                        <tr><td colspan="5" class="text-center py-3 text-muted">无</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 建议买入 -->
+        <div class="card border-success mb-3" id="section-buy">
+            <div class="card-header bg-success text-white fw-bold">
+                <i class="bi bi-cart-plus me-2"></i>建议买入
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>代码</th><th>名称</th><th>评分</th><th>AI</th><th>事件</th><th>基本面</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="buy-tbody">
+                        <tr><td colspan="7" class="text-center py-3 text-muted">无</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 建议卖出 -->
+        <div class="card border-warning mb-3" id="section-sell">
+            <div class="card-header bg-warning text-dark fw-bold">
+                <i class="bi bi-cart-dash me-2"></i>建议卖出
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>代码</th><th>名称</th><th>盈亏</th><th>原因</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="sell-tbody">
+                        <tr><td colspan="5" class="text-center py-3 text-muted">无</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 继续持有 -->
+        <div class="card" id="section-hold">
+            <div class="card-header bg-white fw-bold">
+                <i class="bi bi-hand-thumbs-up me-2 text-primary"></i>继续持有
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>代码</th><th>名称</th><th>盈亏</th><th>原因</th></tr>
+                    </thead>
+                    <tbody id="hold-tbody">
+                        <tr><td colspan="4" class="text-center py-3 text-muted">无</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 风控中心 -->
+    <div class="tab-pane fade" id="tab-risk">
+        <div class="card mb-3">
+            <div class="card-header bg-white">
+                <i class="bi bi-shield-check me-1 text-danger"></i>
+                <strong>风险评估</strong>
+                <span class="badge bg-danger ms-2" id="risk-assessment-badge">—</span>
+            </div>
+            <div class="card-body" id="risk-assessment-text">
+                加载中...
+            </div>
+        </div>
+        <div class="card">
+            <div class="card-header bg-white">
+                <i class="bi bi-exclamation-diamond me-1 text-warning"></i>
+                <strong>卖出信号</strong>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>代码</th><th>名称</th><th>盈亏</th><th>信号</th><th>原因</th><th>操作</th></tr>
+                    </thead>
+                    <tbody id="risk-signals-tbody">
+                        <tr><td colspan="6" class="text-center py-3 text-muted">无风控信号</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 交易记录 -->
+    <div class="tab-pane fade" id="tab-orders">
+        <div class="card">
+            <div class="card-header bg-white">
+                <i class="bi bi-receipt me-1"></i>
+                <strong>今日交易记录</strong>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead class="table-light">
+                        <tr><th>时间</th><th>代码</th><th>名称</th><th>方向</th><th>数量</th><th>价格</th><th>金额</th><th>状态</th></tr>
+                    </thead>
+                    <tbody id="orders-tbody">
+                        <tr><td colspan="8" class="text-center py-3 text-muted">无交易记录</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let _dashboardData = null;
+
+async function loadDashboard() {
+    try {
+        const res = await API.get('/api/trading/dashboard');
+        if (res.success) {
+            _dashboardData = res;
+            renderDashboard(res);
+        }
+    } catch (e) {
+        console.error('加载失败:', e);
+        showToast('danger', '加载失败: ' + e.message);
+    }
+}
+
+function renderDashboard(data) {
+    // 账户概览
+    const acct = data.account || {};
+    document.getElementById('acct-total').textContent = formatMoney(acct.total_capital || 0);
+    document.getElementById('acct-market').textContent = formatMoney(acct.market_value || 0);
+    document.getElementById('acct-cash').textContent = formatMoney(acct.available_cash || 0);
+    document.getElementById('acct-pnl').textContent = formatMoney(acct.total_pnl || 0);
+    document.getElementById('acct-pnl-pct').textContent = (acct.total_pnl_pct || 0).toFixed(2) + '%';
+    document.getElementById('acct-count').textContent = acct.position_count || 0;
+
+    // 风控状态
+    const riskLevel = data.risk_assessment || '未知';
+    document.getElementById('risk-level').textContent = riskLevel.includes('高') ? '⚠️高' : riskLevel.includes('中') ? '⚡中' : '✅低';
+    document.getElementById('risk-assessment-badge').textContent = riskLevel;
+    document.getElementById('risk-assessment-text').textContent = riskLevel;
+
+    // 操作建议计数
+    const recs = data.recommendations || {};
+    document.getElementById('cnt-alerts').textContent = recs.alerts ? recs.alerts.length : 0;
+    document.getElementById('cnt-buy').textContent = recs.buy ? recs.buy.length : 0;
+    document.getElementById('cnt-sell').textContent = recs.sell ? recs.sell.length : 0;
+    document.getElementById('cnt-hold').textContent = recs.hold ? recs.hold.length : 0;
+
+    // 持仓明细
+    renderPositions(data.positions || []);
+
+    // 今日选股
+    renderPicks(data.picks || []);
+
+    // 操作建议
+    renderRecommendations(recs);
+
+    // 风控信号
+    renderRiskSignals(data.risk_signals || []);
+
+    // 交易记录
+    renderOrders(data.pending_orders || []);
+}
+
+function renderPositions(positions) {
+    const tbody = document.getElementById('positions-tbody');
+    if (!positions.length) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center py-4 text-muted">暂无持仓</td></tr>';
+        return;
+    }
+    tbody.innerHTML = positions.map(p => {
+        const pnl = parseFloat(p.profit_loss || 0);
+        const pnlPct = parseFloat(p.profit_pct || p.profit_loss_pct || 0) * 100;
+        const pnlClass = pnl >= 0 ? 'text-success' : 'text-danger';
+        return `<tr>
+            <td><code>${p.ts_code || ''}</code></td>
+            <td>${p.name || ''}</td>
+            <td>${p.shares || p.volume || 0}</td>
+            <td>${parseFloat(p.avg_cost || 0).toFixed(2)}</td>
+            <td>${parseFloat(p.current_price || 0).toFixed(2)}</td>
+            <td>${formatMoney(p.market_value || 0)}</td>
+            <td class="${pnlClass}">${pnl >= 0 ? '+' : ''}${pnl.toFixed(2)}</td>
+            <td class="${pnlClass}">${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%</td>
+            <td>${parseFloat(p.stop_loss_price || 0).toFixed(2)}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-danger" onclick="sellStock('${p.ts_code || ''}')">
+                    <i class="bi bi-cart-dash"></i> 卖出
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function renderPicks(picks) {
+    const tbody = document.getElementById('picks-tbody');
+    if (!picks.length) {
+        tbody.innerHTML = '<tr><td colspan="9" class="text-center py-4 text-muted">暂无选股结果</td></tr>';
+        return;
+    }
+    tbody.innerHTML = picks.slice(0, 20).map((p, i) => {
+        const aiScore = parseFloat(p.ai_score || p.score || 0).toFixed(3);
+        const eventScore = parseFloat(p.event_score || 0).toFixed(3);
+        const fundScore = parseFloat(p.fundamental_score || p.fund_score || 0).toFixed(3);
+        return `<tr>
+            <td>${i + 1}</td>
+            <td><code>${p.ts_code || ''}</code></td>
+            <td><strong>${p.name || ''}</strong></td>
+            <td><span class="text-primary fw-bold">${parseFloat(p.final_score || 0).toFixed(3)}</span></td>
+            <td>${aiScore}</td>
+            <td>${eventScore > 0 ? '<span class="badge bg-warning">+' + eventScore + '</span>' : '-'}</td>
+            <td>${fundScore}</td>
+            <td><span class="badge bg-secondary">${p.track || ''}</span></td>
+            <td>
+                <button class="btn btn-sm btn-outline-success" onclick="buyStock('${p.ts_code || ''}', '${p.name || ''}', ${p.final_score || 0})">
+                    <i class="bi bi-cart-plus"></i> 买入
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+}
+
+function renderRecommendations(recs) {
+    // 止损预警
+    const alertsBody = document.getElementById('alerts-tbody');
+    if (recs.alerts && recs.alerts.length) {
+        alertsBody.innerHTML = recs.alerts.map(a => `<tr class="table-danger">
+            <td><code>${a.ts_code}</code></td>
+            <td>${a.name}</td>
+            <td class="text-danger">${a.profit_pct ? (a.profit_pct * 100).toFixed(1) + '%' : '-'}</td>
+            <td>${a.reason}</td>
+            <td><button class="btn btn-sm btn-danger" onclick="sellStock('${a.ts_code}')">立即卖出</button></td>
+        </tr>`).join('');
+    } else {
+        alertsBody.innerHTML = '<tr><td colspan="5" class="text-center py-3 text-muted">无预警</td></tr>';
+    }
+
+    // 建议买入
+    const buyBody = document.getElementById('buy-tbody');
+    if (recs.buy && recs.buy.length) {
+        buyBody.innerHTML = recs.buy.slice(0, 10).map(a => `<tr>
+            <td><code>${a.ts_code}</code></td>
+            <td><strong>${a.name}</strong></td>
+            <td class="text-primary">${parseFloat(a.final_score || 0).toFixed(3)}</td>
+            <td>${parseFloat(a.ai_score || 0).toFixed(3)}</td>
+            <td>${parseFloat(a.event_score || 0).toFixed(3)}</td>
+            <td>${parseFloat(a.fundamental_score || 0).toFixed(3)}</td>
+            <td><button class="btn btn-sm btn-success" onclick="buyStock('${a.ts_code}', '${a.name}', ${a.final_score || 0})">买入</button></td>
+        </tr>`).join('');
+    } else {
+        buyBody.innerHTML = '<tr><td colspan="7" class="text-center py-3 text-muted">无建议</td></tr>';
+    }
+
+    // 建议卖出
+    const sellBody = document.getElementById('sell-tbody');
+    if (recs.sell && recs.sell.length) {
+        sellBody.innerHTML = recs.sell.map(a => `<tr class="table-warning">
+            <td><code>${a.ts_code}</code></td>
+            <td>${a.name}</td>
+            <td>${a.profit_pct ? (a.profit_pct * 100).toFixed(1) + '%' : '-'}</td>
+            <td>${a.reason}</td>
+            <td><button class="btn btn-sm btn-warning" onclick="sellStock('${a.ts_code}')">卖出</button></td>
+        </tr>`).join('');
+    } else {
+        sellBody.innerHTML = '<tr><td colspan="5" class="text-center py-3 text-muted">无建议</td></tr>';
+    }
+
+    // 继续持有
+    const holdBody = document.getElementById('hold-tbody');
+    if (recs.hold && recs.hold.length) {
+        holdBody.innerHTML = recs.hold.map(a => `<tr>
+            <td><code>${a.ts_code}</code></td>
+            <td>${a.name}</td>
+            <td class="${a.profit_pct >= 0 ? 'text-success' : 'text-danger'}">${a.profit_pct ? (a.profit_pct * 100).toFixed(1) + '%' : '-'}</td>
+            <td class="text-muted">${a.reason}</td>
+        </tr>`).join('');
+    } else {
+        holdBody.innerHTML = '<tr><td colspan="4" class="text-center py-3 text-muted">无</td></tr>';
+    }
+}
+
+function renderRiskSignals(signals) {
+    const tbody = document.getElementById('risk-signals-tbody');
+    if (!signals.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-3 text-muted">无风控信号</td></tr>';
+        return;
+    }
+    tbody.innerHTML = signals.map(s => {
+        const signalClass = s.signal === 'STOP_LOSS' ? 'danger' : s.signal === 'TAKE_PROFIT' ? 'success' : 'warning';
+        return `<tr>
+            <td><code>${s.ts_code}</code></td>
+            <td>${s.name || ''}</td>
+            <td class="text-${s.profit_pct >= 0 ? 'success' : 'danger'}">${s.profit_pct ? (s.profit_pct * 100).toFixed(1) + '%' : '-'}</td>
+            <td><span class="badge bg-${signalClass}">${s.signal || ''}</span></td>
+            <td>${s.reason || ''}</td>
+            <td><button class="btn btn-sm btn-${signalClass}" onclick="sellStock('${s.ts_code}')">执行</button></td>
+        </tr>`;
+    }).join('');
+}
+
+function renderOrders(orders) {
+    const tbody = document.getElementById('orders-tbody');
+    if (!orders.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-3 text-muted">无交易记录</td></tr>';
+        return;
+    }
+    tbody.innerHTML = orders.map(o => {
+        const sideClass = o.side === 'BUY' ? 'success' : 'danger';
+        return `<tr>
+            <td>${o.created_at || ''}</td>
+            <td><code>${o.ts_code || ''}</code></td>
+            <td>${o.name || ''}</td>
+            <td><span class="badge bg-${sideClass}">${o.side || ''}</span></td>
+            <td>${o.volume || 0}</td>
+            <td>${parseFloat(o.price || 0).toFixed(2)}</td>
+            <td>${formatMoney(o.amount || 0)}</td>
+            <td><span class="badge bg-${o.status === 'filled' ? 'success' : 'secondary'}">${o.status || ''}</span></td>
+        </tr>`;
+    }).join('');
+}
+
+async function buyStock(tsCode, name, score) {
+    if (!confirm(`确认买入 ${name} (${tsCode})？`)) return;
+    try {
+        const res = await API.post('/api/execution/buy', { ts_code: tsCode, amount: 10000 });
+        if (res.success) {
+            showToast('success', `买入成功: ${res.volume}股 @ ${res.price}`);
+            loadDashboard();
+        } else {
+            showToast('danger', '买入失败: ' + (res.error || res.msg));
+        }
+    } catch (e) {
+        showToast('danger', '买入失败: ' + e.message);
+    }
+}
+
+async function sellStock(tsCode) {
+    if (!confirm(`确认卖出 ${tsCode}？`)) return;
+    try {
+        const res = await API.post('/api/execution/sell', { ts_code: tsCode });
+        if (res.success) {
+            showToast('success', `卖出成功`);
+            loadDashboard();
+        } else {
+            showToast('danger', '卖出失败: ' + (res.error || res.msg));
+        }
+    } catch (e) {
+        showToast('danger', '卖出失败: ' + e.message);
+    }
+}
+
+async function runFullWorkflow() {
+    if (!confirm('确认执行一键交易？将执行：选股→风控检查→生成订单→模拟撮合')) return;
+    try {
+        const res = await API.post('/api/multi_agent/execute', {
+            trade_date: new Date().toISOString().split('T')[0],
+            top_k: 10,
+            auto_execute: true
+        });
+        if (res.success) {
+            showToast('success', `执行完成！买入${res.buy_orders ? res.buy_orders.length : 0}只，卖出${res.sell_orders ? res.sell_orders.length : 0}只`);
+            loadDashboard();
+        } else {
+            showToast('danger', '执行失败: ' + res.error);
+        }
+    } catch (e) {
+        showToast('danger', '执行失败: ' + e.message);
+    }
+}
+
+function showSection(section) {
+    const el = document.getElementById('tab-recommendations');
+    if (el) {
+        const tab = new bootstrap.Tab(el);
+        tab.show();
+    }
+    const target = document.getElementById('section-' + section);
+    if (target) {
+        target.scrollIntoView({ behavior: 'smooth' });
+    }
+}
+
+function formatMoney(v) {
+    v = parseFloat(v) || 0;
+    return v.toLocaleString('zh-CN', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+}
+
+// 页面加载
+document.addEventListener('DOMContentLoaded', loadDashboard);
+</script>
+{% endblock %}

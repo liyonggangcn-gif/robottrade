@@ -1,0 +1,516 @@
+{% extends "base.html" %}
+{% block title %}Agent驾驶舱{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-robot me-2 text-primary"></i>Agent 驾驶舱</h5>
+    <div class="d-flex align-items-center gap-2">
+        <small class="text-muted" id="last-refresh-time"></small>
+        <button class="btn btn-sm btn-outline-secondary" id="btn-refresh" onclick="loadAll()">
+            <i class="bi bi-arrow-clockwise"></i> 刷新
+        </button>
+    </div>
+</div>
+
+<!-- Toast 容器 -->
+<div class="toast-container position-fixed bottom-0 end-0 p-3" style="z-index:9999">
+    <div id="main-toast" class="toast align-items-center border-0" role="alert">
+        <div class="d-flex">
+            <div class="toast-body" id="toast-body">操作完成</div>
+            <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+        </div>
+    </div>
+</div>
+
+<!-- 账户概览卡片行 -->
+<div class="row g-3 mb-3">
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-bank2 me-1"></i>总资产</div>
+                <div class="fs-5 fw-bold" id="card-total-assets">--</div>
+                <div class="small text-muted mt-1" id="card-broker-type">Broker: --</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-graph-up me-1"></i>今日盈亏</div>
+                <div class="fs-5 fw-bold" id="card-profit-pct">--</div>
+                <div class="small text-muted mt-1" id="card-market-value">持仓市值: --</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-layers me-1"></i>持仓数</div>
+                <div class="fs-5 fw-bold" id="card-positions-count">--</div>
+                <div class="small text-muted mt-1" id="card-cash">现金: --</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1"><i class="bi bi-activity me-1"></i>Agent状态</div>
+                <div class="fs-5 fw-bold" id="card-agent-status">--</div>
+                <div class="small text-muted mt-1" id="card-server-time">--</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 今日决策区块 + 快速操作 -->
+<div class="row g-3 mb-3">
+    <!-- 今日决策 -->
+    <div class="col-12 col-lg-8">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+                <span class="fw-semibold"><i class="bi bi-calendar-check me-2 text-primary"></i>今日交易决策</span>
+                <div id="decision-meta" class="d-flex align-items-center gap-2"></div>
+            </div>
+            <div class="card-body">
+                <!-- 无决策提示 -->
+                <div id="no-decision-tip" class="text-center text-muted py-4">
+                    <i class="bi bi-inbox fs-3 d-block mb-2"></i>
+                    今日暂无决策记录，请点击「运行盘前决策」生成
+                </div>
+                <!-- 决策内容 -->
+                <div id="decision-content" class="d-none">
+                    <!-- 市场研判 + 置信度 -->
+                    <div class="d-flex align-items-center gap-3 mb-3">
+                        <div>
+                            <span class="text-muted small me-1">市场研判:</span>
+                            <span class="badge fs-6" id="regime-badge">--</span>
+                        </div>
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between mb-1">
+                                <small class="text-muted">置信度</small>
+                                <small id="confidence-val" class="fw-semibold">--</small>
+                            </div>
+                            <div class="progress" style="height:8px">
+                                <div class="progress-bar" id="confidence-bar" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- 推理摘要 -->
+                    <div class="mb-3">
+                        <label class="form-label text-muted small mb-1">推理摘要</label>
+                        <div id="reasoning-text" class="p-2 bg-light rounded small text-secondary"
+                             style="min-height:60px;white-space:pre-wrap;line-height:1.6"></div>
+                    </div>
+                    <!-- 交易指令表格 -->
+                    <div>
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <label class="form-label text-muted small mb-0">交易指令</label>
+                            <small class="text-muted" id="trades-count-label"></small>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                                <thead class="table-light">
+                                    <tr>
+                                        <th>代码</th>
+                                        <th>名称</th>
+                                        <th>动作</th>
+                                        <th>仓位%</th>
+                                        <th>理由</th>
+                                        <th>执行</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="trades-tbody">
+                                    <tr><td colspan="6" class="text-center text-muted py-3">暂无交易指令</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 快速操作 -->
+    <div class="col-12 col-lg-4">
+        <div class="card border-0 shadow-sm h-100">
+            <div class="card-header bg-white border-bottom py-2">
+                <span class="fw-semibold"><i class="bi bi-lightning me-2 text-warning"></i>快速操作</span>
+            </div>
+            <div class="card-body d-flex flex-column gap-3">
+                <div>
+                    <button class="btn btn-primary w-100" id="btn-decision" onclick="runPhase('decision', this)">
+                        <i class="bi bi-play-circle me-2"></i>运行盘前决策
+                    </button>
+                    <div class="text-muted small mt-1">生成今日交易计划（约1-3分钟）</div>
+                </div>
+                <div>
+                    <button class="btn btn-warning w-100" id="btn-monitor" onclick="runPhase('monitor_once', this)">
+                        <i class="bi bi-shield-check me-2"></i>单次风控检查
+                    </button>
+                    <div class="text-muted small mt-1">即时执行止损/减仓检查</div>
+                </div>
+                <div>
+                    <button class="btn btn-secondary w-100" id="btn-review" onclick="runPhase('review', this)">
+                        <i class="bi bi-journal-text me-2"></i>立即复盘
+                    </button>
+                    <div class="text-muted small mt-1">生成今日交易复盘报告</div>
+                </div>
+                <!-- 任务状态 -->
+                <div id="job-status-box" class="d-none alert alert-info py-2 small mb-0">
+                    <span class="spinner-border spinner-border-sm me-1"></span>
+                    <span id="job-status-text">任务运行中...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 挂单监控（入场价等待触发） -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold">
+            <i class="bi bi-clock-history me-2 text-warning"></i>挂单监控
+            <span class="badge bg-warning text-dark ms-1" id="pending-badge" style="display:none"></span>
+        </span>
+        <small class="text-muted">盘中价格到位自动触发买入</small>
+    </div>
+    <div class="card-body p-0" id="pending-orders-container">
+        <div class="text-center py-3 text-muted small">
+            <i class="bi bi-check-circle me-1 text-success"></i>今日无挂单
+        </div>
+    </div>
+</div>
+
+<!-- 最近订单 -->
+<div class="card border-0 shadow-sm">
+    <div class="card-header bg-white border-bottom d-flex justify-content-between align-items-center py-2">
+        <span class="fw-semibold"><i class="bi bi-receipt me-2 text-success"></i>最近订单</span>
+        <a href="/agent/account" class="btn btn-sm btn-outline-primary">查看全部</a>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">时间</th>
+                        <th>代码</th>
+                        <th>方向</th>
+                        <th>价格</th>
+                        <th>数量</th>
+                        <th>状态</th>
+                    </tr>
+                </thead>
+                <tbody id="orders-tbody">
+                    <tr><td colspan="6" class="text-center text-muted py-3">暂无订单记录</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const REGIME_MAP = {
+    'bull':    { label: '多头市场', cls: 'bg-success' },
+    'bear':    { label: '空头市场', cls: 'bg-danger' },
+    'neutral': { label: '震荡市场', cls: 'bg-warning text-dark' },
+    'unknown': { label: '未知', cls: 'bg-secondary' },
+};
+const ACTION_MAP = {
+    'buy':    { label: '买入', cls: 'success' },
+    'sell':   { label: '卖出', cls: 'danger' },
+    'hold':   { label: '持有', cls: 'secondary' },
+    'reduce': { label: '减仓', cls: 'warning' },
+    'add':    { label: '加仓', cls: 'primary' },
+};
+
+function showToast(type, msg) {
+    const toast = document.getElementById('main-toast');
+    const body = document.getElementById('toast-body');
+    toast.className = `toast align-items-center text-bg-${type} border-0`;
+    body.textContent = msg;
+    new bootstrap.Toast(toast, { delay: 3500 }).show();
+}
+
+function fmtMoney(v) {
+    if (v == null) return '--';
+    if (Math.abs(v) >= 1e4) return (v / 1e4).toFixed(2) + ' 万';
+    return v.toFixed(2);
+}
+
+function fmtPct(v) {
+    if (v == null) return '--';
+    const sign = v >= 0 ? '+' : '';
+    return sign + v.toFixed(2) + '%';
+}
+
+async function loadAll() {
+    try {
+        const d = await API.get('/api/agent/status');
+        document.getElementById('last-refresh-time').textContent = '刷新于 ' + new Date().toLocaleTimeString('zh-CN');
+
+        // 账户概览
+        const acc = d.account || {};
+        const profitPct = acc.profit_pct || 0;
+        document.getElementById('card-total-assets').textContent = fmtMoney(acc.total_assets) + ' 元';
+        const profitEl = document.getElementById('card-profit-pct');
+        profitEl.textContent = fmtPct(profitPct);
+        profitEl.className = 'fs-5 fw-bold ' + (profitPct >= 0 ? 'text-success' : 'text-danger');
+        document.getElementById('card-market-value').textContent = '持仓市值: ' + fmtMoney(acc.market_value) + ' 元';
+        document.getElementById('card-cash').textContent = '现金: ' + fmtMoney(acc.cash) + ' 元';
+        document.getElementById('card-broker-type').textContent = 'Broker: ' + (d.broker_type || '--');
+        document.getElementById('card-server-time').textContent = d.server_time || '--';
+
+        // 持仓数 — 由 loadPositionCount() 单独请求，此处不覆盖
+
+        // Agent状态
+        const agentStatusEl = document.getElementById('card-agent-status');
+        if (acc.error) {
+            agentStatusEl.innerHTML = '<span class="badge bg-danger">离线</span>';
+        } else {
+            agentStatusEl.innerHTML = '<span class="badge bg-success">运行中</span>';
+        }
+
+        // 今日决策
+        const plan = d.today_plan;
+        if (!plan || plan.error || !plan.trade_date) {
+            document.getElementById('no-decision-tip').classList.remove('d-none');
+            document.getElementById('decision-content').classList.add('d-none');
+        } else {
+            document.getElementById('no-decision-tip').classList.add('d-none');
+            document.getElementById('decision-content').classList.remove('d-none');
+
+            // Meta 信息
+            document.getElementById('decision-meta').innerHTML =
+                `<small class="text-muted">生成于 ${plan.generated_at || ''}</small>`;
+
+            // 市场研判
+            const regime = plan.market_regime || 'unknown';
+            const rMap = REGIME_MAP[regime] || REGIME_MAP['unknown'];
+            document.getElementById('regime-badge').textContent = rMap.label;
+            document.getElementById('regime-badge').className = 'badge fs-6 ' + rMap.cls;
+
+            // 置信度
+            const conf = Math.round((plan.confidence || 0) * 100);
+            document.getElementById('confidence-val').textContent = conf + '%';
+            const bar = document.getElementById('confidence-bar');
+            bar.style.width = conf + '%';
+            bar.className = 'progress-bar ' + (conf >= 70 ? 'bg-success' : conf >= 40 ? 'bg-warning' : 'bg-danger');
+
+            // 推理
+            document.getElementById('reasoning-text').textContent = plan.reasoning || '（无推理说明）';
+
+            // 交易指令
+            const trades = plan.trades || [];
+            document.getElementById('trades-count-label').textContent = `共 ${trades.length} 条指令`;
+            const tbody = document.getElementById('trades-tbody');
+            if (trades.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">今日无交易指令</td></tr>';
+            } else {
+                tbody.innerHTML = trades.map(t => {
+                    const aMap = ACTION_MAP[t.action] || { label: t.action, cls: 'secondary' };
+                    const statusBadge = t.executed
+                        ? '<span class="badge bg-success">已执行</span>'
+                        : '<span class="badge bg-light text-dark border">待执行</span>';
+                    return `<tr>
+                        <td class="fw-mono small">${t.ts_code || '--'}</td>
+                        <td>${t.name || '--'}</td>
+                        <td><span class="badge bg-${aMap.cls}">${aMap.label}</span></td>
+                        <td>${t.position_pct != null ? t.position_pct + '%' : '--'}</td>
+                        <td class="text-muted small" style="max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${t.reason || ''}">${t.reason || '--'}</td>
+                        <td>${statusBadge}</td>
+                    </tr>`;
+                }).join('');
+            }
+        }
+
+        // 最近订单
+        const orders = d.recent_orders || [];
+        const ordersTbody = document.getElementById('orders-tbody');
+        if (orders.length === 0) {
+            ordersTbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-3">暂无订单记录</td></tr>';
+        } else {
+            ordersTbody.innerHTML = orders.map(o => {
+                const sideBadge = o.side === 'buy'
+                    ? '<span class="badge bg-success">买入</span>'
+                    : '<span class="badge bg-danger">卖出</span>';
+                const statusBadge = o.status === 'filled'
+                    ? '<span class="badge bg-success">成交</span>'
+                    : o.status === 'cancelled'
+                    ? '<span class="badge bg-secondary">撤单</span>'
+                    : '<span class="badge bg-warning text-dark">待成交</span>';
+                return `<tr>
+                    <td class="ps-3 small text-muted">${(o.created_at || '').slice(5, 16)}</td>
+                    <td class="fw-mono small">${o.ts_code || '--'}</td>
+                    <td>${sideBadge}</td>
+                    <td>${o.price != null ? Number(o.price).toFixed(3) : '--'}</td>
+                    <td>${o.volume != null ? o.volume : '--'}</td>
+                    <td>${statusBadge}</td>
+                </tr>`;
+            }).join('');
+        }
+    } catch (e) {
+        showToast('danger', '加载失败: ' + e.message);
+    }
+}
+
+// 加载持仓数（单独请求更精确）
+async function loadPositionCount() {
+    try {
+        const d = await API.get('/api/agent/positions');
+        document.getElementById('card-positions-count').textContent = d.count != null ? d.count : '--';
+    } catch(e) {}
+}
+
+let _pollTimer = null;
+async function runPhase(phase, btnEl) {
+    const origHTML = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>执行中...';
+
+    const jobBox = document.getElementById('job-status-box');
+    const jobText = document.getElementById('job-status-text');
+    jobBox.classList.remove('d-none');
+
+    // monitor_once 返回同步结果
+    if (phase === 'monitor_once') {
+        try {
+            const r = await API.post('/api/agent/run/monitor_once');
+            jobBox.classList.add('d-none');
+            showToast('success', `风控检查完成，触发 ${r.actions || 0} 个动作`);
+            loadAll();
+        } catch (e) {
+            showToast('danger', '风控检查失败: ' + e.message);
+            jobBox.classList.add('d-none');
+        } finally {
+            btnEl.disabled = false;
+            btnEl.innerHTML = origHTML;
+        }
+        return;
+    }
+
+    try {
+        const r = await API.post(`/api/agent/run/${phase}`);
+        if (r.error) {
+            showToast('danger', r.error);
+            jobBox.classList.add('d-none');
+            btnEl.disabled = false;
+            btnEl.innerHTML = origHTML;
+            return;
+        }
+        const jobId = r.job_id;
+        jobText.textContent = `任务 ${jobId} 运行中...`;
+
+        let tries = 0;
+        _pollTimer = setInterval(async () => {
+            tries++;
+            try {
+                const status = await API.get(`/api/agent/job/${jobId}`);
+                if (status.status === 'done') {
+                    clearInterval(_pollTimer);
+                    jobBox.classList.add('d-none');
+                    showToast('success', `${phase === 'decision' ? '决策' : '复盘'}完成`);
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = origHTML;
+                    loadAll();
+                } else if (status.status === 'error') {
+                    clearInterval(_pollTimer);
+                    jobBox.classList.add('d-none');
+                    showToast('danger', '任务失败: ' + (status.error || '未知错误'));
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = origHTML;
+                } else if (tries >= 90) {
+                    clearInterval(_pollTimer);
+                    jobBox.classList.add('d-none');
+                    showToast('warning', '任务超时，请稍后手动刷新');
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = origHTML;
+                } else {
+                    jobText.textContent = `任务 ${jobId} 运行中... (${tries * 2}s)`;
+                }
+            } catch(e) {
+                if (tries >= 90) {
+                    clearInterval(_pollTimer);
+                    btnEl.disabled = false;
+                    btnEl.innerHTML = origHTML;
+                }
+            }
+        }, 2000);
+    } catch (e) {
+        showToast('danger', '请求失败: ' + e.message);
+        jobBox.classList.add('d-none');
+        btnEl.disabled = false;
+        btnEl.innerHTML = origHTML;
+    }
+}
+
+// 加载挂单监控
+async function loadPendingOrders() {
+    const container = document.getElementById('pending-orders-container');
+    const badge = document.getElementById('pending-badge');
+    try {
+        const d = await API.get('/api/agent/pending_orders');
+        const all = d.all || [];
+        const pending = d.pending || [];
+        if (!all.length) {
+            container.innerHTML = '<div class="text-center py-3 text-muted small"><i class="bi bi-check-circle me-1 text-success"></i>今日无挂单</div>';
+            badge.style.display = 'none';
+            return;
+        }
+        // badge 显示待触发数量
+        if (pending.length > 0) {
+            badge.textContent = pending.length;
+            badge.style.display = '';
+        } else {
+            badge.style.display = 'none';
+        }
+        const STATUS_MAP = {
+            'pending':  '<span class="badge bg-warning text-dark">等待触发</span>',
+            'executed': '<span class="badge bg-success">已执行</span>',
+            'failed':   '<span class="badge bg-danger">失败</span>',
+        };
+        const rows = all.map(o => {
+            const statusBadge = STATUS_MAP[o.status] || `<span class="badge bg-secondary">${o.status}</span>`;
+            const weightPct = o.weight > 0 ? (o.weight * 100).toFixed(1) + '%' : '—';
+            return `<tr class="${o.status === 'pending' ? 'table-warning' : ''}">
+                <td class="ps-3"><strong>${o.name || o.ts_code}</strong>
+                    <div><code class="small text-primary">${(o.ts_code || '').substring(0, 9)}</code></div>
+                </td>
+                <td class="text-end">¥${o.entry_price > 0 ? o.entry_price.toFixed(2) : '—'}</td>
+                <td class="text-end text-danger small">¥${o.stop_loss_price > 0 ? o.stop_loss_price.toFixed(2) : '—'}</td>
+                <td class="text-end text-muted small">${weightPct}</td>
+                <td class="text-muted small" style="max-width:160px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${o.reason || ''}">${o.reason || '—'}</td>
+                <td>${statusBadge}</td>
+                <td class="text-muted small">${o.executed_at || o.created_at || '—'}</td>
+            </tr>`;
+        }).join('');
+        container.innerHTML = `<div class="table-responsive">
+            <table class="table table-sm table-hover align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th class="ps-3">股票</th>
+                        <th class="text-end">入场价</th>
+                        <th class="text-end">止损价</th>
+                        <th class="text-end">仓位</th>
+                        <th>理由</th>
+                        <th>状态</th>
+                        <th>时间</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+    } catch (e) {
+        container.innerHTML = '<div class="text-center py-3 text-muted small">加载失败</div>';
+    }
+}
+
+// 初始化
+loadAll();
+loadPositionCount();
+loadPendingOrders();
+setInterval(loadAll, 30000);
+setInterval(loadPendingOrders, 60000);
+</script>
+{% endblock %}

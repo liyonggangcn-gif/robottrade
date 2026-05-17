@@ -1,0 +1,1031 @@
+{% extends "base.html" %}
+{% block title %}股票池{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="fw-bold mb-0"><i class="bi bi-collection me-2 text-primary"></i>股票池管理</h5>
+    <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadAll()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+        <button class="btn btn-sm btn-outline-primary" onclick="triggerWeeklyRefresh(this)">
+            <i class="bi bi-calendar-week me-1"></i>触发周刷新
+        </button>
+        <button class="btn btn-sm btn-success" data-bs-toggle="modal" data-bs-target="#addStockModal">
+            <i class="bi bi-plus-circle me-1"></i>手工加入
+        </button>
+    </div>
+</div>
+
+<!-- 手工加入股票 Modal -->
+<div class="modal fade" id="addStockModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title"><i class="bi bi-plus-circle me-2 text-success"></i>手工加入股票池</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div class="mb-3 position-relative">
+                    <label class="form-label small fw-semibold">股票代码 / 名称</label>
+                    <input type="text" id="add-stock-input" class="form-control" placeholder="如：600519 或 贵州茅台"
+                           oninput="onAddStockInput(this.value)" autocomplete="off">
+                    <div id="add-suggest-box" class="border rounded shadow-sm bg-white position-absolute w-100" style="z-index:999;display:none;top:100%"></div>
+                    <div id="add-stock-name" class="text-success small mt-1" style="min-height:1.2em"></div>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">加入层级</label>
+                    <select id="add-stock-tier" class="form-select form-select-sm">
+                        <option value="watch">关注层（watch）——推荐观察</option>
+                        <option value="reserve">储备层（reserve）</option>
+                        <option value="core_holding">核心持仓层（core_holding）</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label small fw-semibold">备注（可选）</label>
+                    <input type="text" id="add-stock-notes" class="form-control form-control-sm" placeholder="加入原因或备注">
+                </div>
+                <div class="alert alert-info small py-2 mb-0">
+                    <i class="bi bi-pin-angle me-1"></i>手工加入的股票会固定在池中，不受周刷新影响。
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary btn-sm" data-bs-dismiss="modal">取消</button>
+                <button class="btn btn-success btn-sm" id="add-stock-btn" onclick="submitAddStock()">
+                    <i class="bi bi-check-circle me-1"></i>确认加入
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 概况卡片 -->
+<div class="row g-3 mb-4">
+    <div class="col-6 col-md-3">
+        <div class="card stat-card primary h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-star-fill me-1 text-warning"></i>核心持仓层</div>
+                <div class="fw-bold fs-3" id="cnt-core">—</div>
+                <div class="text-muted small">core_holding</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card success h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-eye me-1 text-success"></i>关注层</div>
+                <div class="fw-bold fs-3" id="cnt-watch">—</div>
+                <div class="text-muted small">watch</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card warning h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-bookmark me-1 text-secondary"></i>储备层</div>
+                <div class="fw-bold fs-3" id="cnt-reserve">—</div>
+                <div class="text-muted small">reserve</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-6 col-md-3">
+        <div class="card stat-card info h-100">
+            <div class="card-body">
+                <div class="text-muted small mb-1"><i class="bi bi-graph-up-arrow me-1 text-danger"></i>今日买入信号</div>
+                <div class="fw-bold fs-3 text-danger" id="cnt-signals">—</div>
+                <div class="text-muted small" id="cnt-approaching">接近买入区: —</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tab 切换 -->
+<ul class="nav nav-tabs mb-3" id="poolTabs">
+    <li class="nav-item">
+        <a class="nav-link active" href="#" onclick="showTab('tab-signals');return false;">
+            <i class="bi bi-lightning-charge me-1"></i>买入信号
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="#" onclick="showTab('tab-list');return false;" id="tab-list-link">
+            <i class="bi bi-list-ul me-1"></i>名单管理
+            <span class="badge bg-secondary ms-1" id="badge-total">—</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="#" onclick="showTab('tab-health');return false;" id="tab-health-link">
+            <i class="bi bi-shield-check me-1"></i>健康检查
+            <span class="badge bg-danger ms-1" id="badge-health-red" style="display:none">0</span>
+        </a>
+    </li>
+    <li class="nav-item">
+        <a class="nav-link" href="#" onclick="showTab('tab-valuation');return false;" id="tab-valuation-link">
+            <i class="bi bi-bar-chart-line me-1"></i>估值一览
+            <span class="badge bg-success ms-1" id="badge-val-underval" style="display:none">0</span>
+        </a>
+    </li>
+</ul>
+
+<!-- ===== Tab 1: 信号 ===== -->
+<div id="tab-signals" style="display:none">
+    <div class="d-flex justify-content-end align-items-center mb-2 gap-2">
+        <small class="text-muted" id="signals-cache-hint"></small>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadSignals(true)">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新信号
+        </button>
+    </div>
+    <div id="signals-loading" class="text-center py-4 text-muted" style="display:none">
+        <span class="spinner-border spinner-border-sm me-2"></span>加载买入信号中...
+    </div>
+    <div id="signals-body" style="display:none">
+        <!-- 买入信号 -->
+        <div id="section-buy-signals" class="mb-4" style="display:none">
+            <div class="card border-danger">
+                <div class="card-header bg-danger text-white fw-bold d-flex justify-content-between">
+                    <span><i class="bi bi-lightning-charge me-2"></i>今日买入信号 <span id="badge-signals" class="badge bg-white text-danger ms-1">0</span></span>
+                    <small class="fw-normal opacity-75">按公司类型分组，估值进入买入区</small>
+                </div>
+                <div class="card-body p-0" id="table-signals"></div>
+            </div>
+        </div>
+
+        <!-- 接近买入区 -->
+        <div id="section-approaching" class="mb-4" style="display:none">
+            <div class="card border-warning">
+                <div class="card-header bg-warning text-dark fw-bold d-flex justify-content-between">
+                    <span><i class="bi bi-bell me-2"></i>接近买入区 <span id="badge-approaching" class="badge bg-dark text-warning ms-1">0</span></span>
+                    <small class="fw-normal">尚未完全进入，提前关注</small>
+                </div>
+                <div class="card-body p-0" id="table-approaching"></div>
+            </div>
+        </div>
+
+        <!-- 全池快照（仅显示前100条） -->
+        <div class="card">
+            <div class="card-header bg-white fw-bold d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-table me-2 text-primary"></i>全池估值快照（前100条）</span>
+                <small class="text-muted fw-normal" id="pool-snapshot-date"></small>
+            </div>
+            <div class="card-body p-0" id="table-pool"></div>
+        </div>
+    </div>
+</div>
+
+<!-- ===== Tab 3: 健康检查 ===== -->
+<div id="tab-health" style="display:none">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <span class="text-muted small" id="health-meta"></span>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <div id="health-summary-badges"></div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadHealth(false)">
+                <i class="bi bi-arrow-clockwise me-1"></i>刷新缓存
+            </button>
+            <button class="btn btn-sm btn-outline-danger" onclick="loadHealth(true)">
+                <i class="bi bi-database-check me-1"></i>重新拉取年报
+            </button>
+        </div>
+    </div>
+
+    <div id="health-loading" class="text-center py-5 text-muted" style="display:none">
+        <span class="spinner-border spinner-border-sm me-2"></span>
+        正在从 Tushare 拉取 2024 年报数据，请稍候（首次约需 1-3 分钟）...
+    </div>
+    <div id="health-error" class="alert alert-danger" style="display:none"></div>
+    <div id="health-body"></div>
+
+    <div class="alert alert-info small mt-3">
+        <i class="bi bi-info-circle me-1"></i>
+        数据来源：Tushare 2024 年年报（截止 20241231）。当日结果缓存，次日自动失效。
+        <strong>科创板/科技类</strong>公司若因研发投入导致现金流为负，会单独标注，可酌情放宽。
+    </div>
+</div>
+
+<!-- ===== Tab 4: 估值一览 ===== -->
+<div id="tab-valuation" style="display:none">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <span class="text-muted small" id="val-meta"></span>
+        </div>
+        <div class="d-flex gap-2 align-items-center">
+            <div id="val-summary-badges"></div>
+            <button class="btn btn-sm btn-outline-secondary" onclick="loadValuation(false)">
+                <i class="bi bi-arrow-clockwise me-1"></i>刷新缓存
+            </button>
+            <button class="btn btn-sm btn-outline-primary" onclick="loadValuation(true)">
+                <i class="bi bi-calculator me-1"></i>重新计算（7天有效）
+            </button>
+        </div>
+    </div>
+    <div id="val-loading" class="text-center py-5 text-muted" style="display:none">
+        <span class="spinner-border spinner-border-sm me-2"></span>
+        正在批量估值全池股票，首次约需 10-30 秒...
+    </div>
+    <div id="val-error" class="alert alert-danger" style="display:none"></div>
+    <div id="val-body"></div>
+    <div class="alert alert-info small mt-3">
+        <i class="bi bi-info-circle me-1"></i>
+        估值方法因行业而异：银行用 PB-戈登、公用事业用 DDM、周期品用 EV/EBITDA、科技用 PEG+研发强度。
+        数据来源：<code>qmt.company_financials</code>（优先）+ 本地 stock_info（兜底）。缓存 7 天。
+    </div>
+</div>
+
+<!-- ===== Tab 2: 名单管理 ===== -->
+<div id="tab-list" style="display:none">
+    <!-- 赛道分布条 -->
+    <div id="layer-dist-bar" class="mb-3" style="display:none">
+        <div class="d-flex flex-wrap gap-1 align-items-center" id="layer-badges"></div>
+    </div>
+
+    <div class="card">
+        <div class="card-header bg-white">
+            <!-- 搜索+筛选栏 -->
+            <div class="row g-2 align-items-center">
+                <div class="col-12 col-md-3">
+                    <div class="input-group input-group-sm">
+                        <span class="input-group-text"><i class="bi bi-search"></i></span>
+                        <input type="text" id="list-search" class="form-control" placeholder="搜索代码或名称..."
+                               oninput="onListSearch()" autocomplete="off">
+                    </div>
+                </div>
+                <div class="col-6 col-md-2">
+                    <select id="list-layer" class="form-select form-select-sm" onchange="loadList(1)">
+                        <option value="">全部赛道</option>
+                        <option value="layer1">L1 算力芯片</option>
+                        <option value="layer2">L2 AI基础设施</option>
+                        <option value="layer3">L3 云/网络</option>
+                        <option value="layer4">L4 大模型/应用</option>
+                        <option value="layer5">L5 机器人/物理AI</option>
+                        <option value="div_bank">红利 银行/保险</option>
+                        <option value="div_energy">红利 能源/电信</option>
+                        <option value="div_consumer">红利 消费/基建</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <select id="list-sector" class="form-select form-select-sm" onchange="loadList(1)">
+                        <option value="">全部板块</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-1">
+                    <select id="list-tier" class="form-select form-select-sm" onchange="loadList(1)">
+                        <option value="">全部层级</option>
+                        <option value="core_holding">核心持仓</option>
+                        <option value="watch">关注层</option>
+                        <option value="reserve">储备层</option>
+                    </select>
+                </div>
+                <div class="col-6 col-md-2">
+                    <div class="form-check form-switch ms-1 mt-1">
+                        <input class="form-check-input" type="checkbox" id="list-manual-only" onchange="loadList(1)">
+                        <label class="form-check-label small" for="list-manual-only">仅手工</label>
+                    </div>
+                </div>
+                <div class="col-4 col-md-1">
+                    <select id="list-per-page" class="form-select form-select-sm" onchange="loadList(1)">
+                        <option value="20">20条</option>
+                        <option value="50" selected>50条</option>
+                        <option value="100">100条</option>
+                        <option value="200">200条</option>
+                    </select>
+                </div>
+                <div class="col-4 col-md-1 text-end">
+                    <span class="text-muted small" id="list-total-text"></span>
+                </div>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div id="list-loading" class="text-center py-4 text-muted" style="display:none">
+                <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+            </div>
+            <div id="list-table-wrap"></div>
+        </div>
+        <!-- 分页 -->
+        <div class="card-footer bg-white" id="list-pagination" style="display:none">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="text-muted small" id="page-info"></span>
+                <nav>
+                    <ul class="pagination pagination-sm mb-0" id="pager"></ul>
+                </nav>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const TYPE_NAMES = {
+    brand: "品牌消费", cashflow: "稳定现金流", resource: "资源周期",
+    rate_sensitive: "利率敏感", growth: "成长科技", policy: "政策主题"
+};
+const TYPE_COLORS = {
+    brand: "bg-primary", cashflow: "bg-success", resource: "bg-warning text-dark",
+    rate_sensitive: "bg-info", growth: "bg-danger", policy: "bg-secondary"
+};
+const LAYER_NAMES = {
+    layer1: "L1 算力芯片", layer2: "L2 AI基础设施", layer3: "L3 云/网络",
+    layer4: "L4 大模型/应用", layer5: "L5 机器人/物理AI",
+    div_bank: "红利·银行保险", div_energy: "红利·能源电信", div_consumer: "红利·消费基建",
+    unknown: "未分类"
+};
+const LAYER_COLORS = {
+    layer1: "bg-danger", layer2: "bg-warning text-dark", layer3: "bg-primary",
+    layer4: "bg-success", layer5: "bg-dark",
+    div_bank: "bg-info", div_energy: "bg-secondary", div_consumer: "bg-secondary",
+    unknown: "bg-light text-dark border"
+};
+
+// ── Tab 切换 ──────────────────────────────────────────
+function showTab(id) {
+    ['tab-signals', 'tab-list', 'tab-health', 'tab-valuation'].forEach(t => {
+        document.getElementById(t).style.display = id === t ? '' : 'none';
+    });
+    document.querySelectorAll('#poolTabs .nav-link').forEach((el, i) => {
+        el.classList.toggle('active',
+            (i === 0 && id === 'tab-signals') ||
+            (i === 1 && id === 'tab-list') ||
+            (i === 2 && id === 'tab-health') ||
+            (i === 3 && id === 'tab-valuation'));
+    });
+    if (id === 'tab-list' && !listLoaded) {
+        initList();
+        listLoaded = true;
+    }
+    if (id === 'tab-signals' && !signalsLoaded) {
+        loadSignals();
+        signalsLoaded = true;
+    }
+    if (id === 'tab-health' && !healthLoaded) {
+        loadHealth(false);
+        healthLoaded = true;
+    }
+    if (id === 'tab-valuation' && !valuationLoaded) {
+        loadValuation(false);
+        valuationLoaded = true;
+    }
+}
+let listLoaded      = false;
+let signalsLoaded   = false;
+let healthLoaded    = false;
+let valuationLoaded = false;
+
+// ── 概况 ──────────────────────────────────────────────
+async function loadPoolStatus() {
+    try {
+        const d = await API.get('/api/pool/status');
+        document.getElementById('cnt-core').textContent    = d.core_holding || 0;
+        document.getElementById('cnt-watch').textContent   = d.watch || 0;
+        document.getElementById('cnt-reserve').textContent = d.reserve || 0;
+    } catch (e) {}
+}
+
+// ── 信号 Tab ──────────────────────────────────────────
+async function loadSignals(forceRefresh) {
+    document.getElementById('signals-loading').style.display = 'block';
+    document.getElementById('signals-body').style.display = 'none';
+    try {
+        const url = forceRefresh ? '/api/pool/signals?refresh=true' : '/api/pool/signals';
+        const d = await API.get(url);
+        const hint = document.getElementById('signals-cache-hint');
+        if (hint) hint.textContent = d.cached ? ('缓存(' + d.cache_age_s + 's前)') : '实时';
+        document.getElementById('cnt-signals').textContent = d.signals_count || 0;
+        document.getElementById('cnt-approaching').textContent = `接近买入区: ${d.approaching_count || 0}`;
+        document.getElementById('badge-signals').textContent = d.signals_count || 0;
+        document.getElementById('badge-approaching').textContent = d.approaching_count || 0;
+
+        if (d.signals && d.signals.length) {
+            document.getElementById('section-buy-signals').style.display = '';
+            document.getElementById('table-signals').innerHTML = buildSignalTable(d.signals);
+        }
+        if (d.approaching && d.approaching.length) {
+            document.getElementById('section-approaching').style.display = '';
+            document.getElementById('table-approaching').innerHTML = buildSignalTable(d.approaching, true);
+        }
+        if (d.all_pool && d.all_pool.length) {
+            document.getElementById('pool-snapshot-date').textContent = `共 ${d.all_pool_count} 只，显示前100条`;
+            document.getElementById('table-pool').innerHTML = buildPoolTable(d.all_pool.slice(0, 100));
+        } else {
+            document.getElementById('table-pool').innerHTML = emptyHTML('股票池为空，请先运行周刷新或手工加入股票');
+        }
+        document.getElementById('signals-loading').style.display = 'none';
+        document.getElementById('signals-body').style.display = '';
+    } catch (e) {
+        document.getElementById('signals-loading').innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+function buildSignalTable(list, isApproaching) {
+    const groups = {};
+    list.forEach(r => { const ct = r.company_type || 'growth'; if (!groups[ct]) groups[ct] = []; groups[ct].push(r); });
+    const order = ['brand', 'cashflow', 'resource', 'rate_sensitive', 'growth', 'policy'];
+    let html = '';
+    order.forEach(ct => {
+        const rows = groups[ct];
+        if (!rows || !rows.length) return;
+        const typeName = TYPE_NAMES[ct] || ct;
+        const typeCls = TYPE_COLORS[ct] || 'bg-secondary';
+        html += `<div class="px-3 pt-3 pb-1"><span class="badge ${typeCls} me-2">${typeName}</span><small class="text-muted">${rows.length} 只</small></div>`;
+        const rowHtml = rows.map(r => {
+            const name = (r.company_name || '').substring(0, 6);
+            const code = (r.ts_code || '').substring(0, 6);
+            const reason = r.signal_reason || '';
+            const margin = r.safety_margin ? `<span class="badge ${r.safety_margin > 0 ? 'bg-success-subtle text-success' : 'bg-danger-subtle text-danger'} ms-1">${r.safety_margin > 0 ? '+' : ''}${(r.safety_margin * 100).toFixed(0)}%</span>` : '';
+            const target = r.target_price_mid ? `<span class="text-muted small ms-2">目标价 ¥${parseFloat(r.target_price_mid).toFixed(1)}</span>` : '';
+            const tier = r.tier === 'watch' ? `<span class="badge bg-primary-subtle text-primary">关注</span>` : `<span class="badge bg-secondary-subtle text-secondary">储备</span>`;
+            return `<tr>
+                <td><strong>${name}</strong></td>
+                <td><code class="small text-primary">${code}</code></td>
+                <td>${tier}</td>
+                <td class="text-muted small">${reason}${target}${margin}</td>
+                <td class="text-end text-muted small">${r.current_price ? '¥' + parseFloat(r.current_price).toFixed(2) : '—'}</td>
+                <td class="text-end text-muted small">${r.pe_ttm ? 'PE ' + parseFloat(r.pe_ttm).toFixed(1) : ''}</td>
+                <td class="text-end text-muted small">${r.pb ? 'PB ' + parseFloat(r.pb).toFixed(2) : ''}</td>
+                <td><button class="btn btn-xs btn-outline-primary py-0 px-1" style="font-size:11px" onclick="goAnalyze('${r.ts_code}')">深度分析</button></td>
+            </tr>`;
+        }).join('');
+        html += `<div class="table-responsive"><table class="table table-sm table-hover mb-0">
+            <thead class="table-light"><tr><th>名称</th><th>代码</th><th>层级</th><th>信号原因</th><th class="text-end">现价</th><th class="text-end">PE</th><th class="text-end">PB</th><th></th></tr></thead>
+            <tbody>${rowHtml}</tbody></table></div>`;
+    });
+    return html || emptyHTML('无信号');
+}
+
+function buildPoolTable(list) {
+    const rows = list.map(r => {
+        const signal = r.valuation_signal || '';
+        const signalBg = signal === 'cheap' ? 'bg-success' : signal === 'expensive' ? 'bg-danger' : signal === 'fair' ? 'bg-secondary' : 'bg-light text-dark border';
+        const typeName = TYPE_NAMES[r.company_type] || r.company_type || '';
+        const typeCls = TYPE_COLORS[r.company_type] || 'bg-secondary';
+        const tierLabel = r.tier === 'watch' ? '关注' : r.tier === 'reserve' ? '储备' : r.tier || '';
+        return `<tr>
+            <td><strong>${(r.company_name || '').substring(0, 8)}</strong></td>
+            <td><code class="small text-primary">${(r.ts_code || '').substring(0, 6)}</code></td>
+            <td><span class="badge ${typeCls}">${typeName}</span></td>
+            <td class="text-muted small">${tierLabel}</td>
+            <td class="text-end text-muted small">${r.pe_ttm ? parseFloat(r.pe_ttm).toFixed(1) : '—'}</td>
+            <td class="text-end text-muted small">${r.pb ? parseFloat(r.pb).toFixed(2) : '—'}</td>
+            <td class="text-end text-muted small">${r.pe_percentile_5y != null && r.pe_percentile_5y !== '' ? parseFloat(r.pe_percentile_5y).toFixed(0) + '%' : '—'}</td>
+            <td class="text-end text-muted small">${r.peg != null && r.peg !== '' ? parseFloat(r.peg).toFixed(2) : '—'}</td>
+            <td class="text-end text-muted small">${r.dividend_yield != null && r.dividend_yield !== '' ? parseFloat(r.dividend_yield).toFixed(1) + '%' : '—'}</td>
+            <td><span class="badge ${signalBg}">${signal || '—'}</span></td>
+            <td class="text-end text-muted small">${r.current_price ? '¥' + parseFloat(r.current_price).toFixed(2) : '—'}</td>
+        </tr>`;
+    }).join('');
+    return `<div class="table-responsive"><table class="table table-sm table-hover mb-0">
+        <thead class="table-light"><tr><th>名称</th><th>代码</th><th>类型</th><th>层级</th>
+        <th class="text-end">PE</th><th class="text-end">PB</th><th class="text-end">PE分位</th><th class="text-end">PEG</th>
+        <th class="text-end">股息率</th><th>估值信号</th><th class="text-end">现价</th></tr></thead>
+        <tbody>${rows}</tbody></table></div>`;
+}
+
+// ── 名单管理 Tab ──────────────────────────────────────
+let listSearchTimer = null;
+let listCurrentPage = 1;
+
+async function initList() {
+    // 加载板块列表
+    try {
+        const d = await API.get('/api/pool/sectors');
+        const sel = document.getElementById('list-sector');
+        (d.sectors || []).forEach(s => {
+            const opt = document.createElement('option');
+            opt.value = s; opt.textContent = s;
+            sel.appendChild(opt);
+        });
+    } catch(e) {}
+
+    // 加载赛道分布
+    try {
+        const d = await API.get('/api/pool/layers');
+        const layers = d.layers || {};
+        const ORDER = ['layer1','layer2','layer3','layer4','layer5','div_bank','div_energy','div_consumer','unknown'];
+        const badgesEl = document.getElementById('layer-badges');
+        const barEl    = document.getElementById('layer-dist-bar');
+        let html = '<span class="text-muted small me-2">赛道分布：</span>';
+        ORDER.forEach(key => {
+            const cnt = layers[key];
+            if (!cnt) return;
+            const name = LAYER_NAMES[key] || key;
+            const cls  = LAYER_COLORS[key] || 'bg-secondary';
+            html += `<span class="badge ${cls} me-1" style="cursor:pointer;font-size:11px"
+                title="${name}"
+                onclick="filterByLayer('${key}')">${name} <strong>${cnt}</strong></span>`;
+        });
+        html += `<span class="badge bg-light text-dark border ms-1" style="cursor:pointer;font-size:11px" onclick="filterByLayer('')">全部</span>`;
+        badgesEl.innerHTML = html;
+        barEl.style.display = '';
+    } catch(e) {}
+
+    loadList(1);
+}
+
+function filterByLayer(layer) {
+    document.getElementById('list-layer').value = layer;
+    loadList(1);
+}
+
+function onListSearch() {
+    clearTimeout(listSearchTimer);
+    listSearchTimer = setTimeout(() => loadList(1), 400);
+}
+
+let listSortBy = '';
+let listSortOrder = 'asc';
+
+function sortList(col) {
+    if (listSortBy === col) {
+        listSortOrder = listSortOrder === 'asc' ? 'desc' : 'asc';
+    } else {
+        listSortBy = col;
+        listSortOrder = 'asc';
+    }
+    loadList(1);
+}
+
+async function loadList(page) {
+    listCurrentPage = page;
+    const q       = document.getElementById('list-search').value.trim();
+    const sector  = document.getElementById('list-sector').value;
+    const tier    = document.getElementById('list-tier').value;
+    const layer   = document.getElementById('list-layer').value;
+    const manual  = document.getElementById('list-manual-only').checked;
+    const perPage = document.getElementById('list-per-page').value || 50;
+
+    document.getElementById('list-loading').style.display = 'block';
+    document.getElementById('list-table-wrap').innerHTML = '';
+
+    let url = `/api/pool/list?page=${page}&per_page=${perPage}`;
+    if (q)            url += `&q=${encodeURIComponent(q)}`;
+    if (sector)       url += `&sector=${encodeURIComponent(sector)}`;
+    if (tier)         url += `&tier=${encodeURIComponent(tier)}`;
+    if (layer)        url += `&ai_layer=${encodeURIComponent(layer)}`;
+    if (manual)       url += `&manual_only=true`;
+    if (listSortBy)   url += `&sort_by=${listSortBy}&sort_order=${listSortOrder}`;
+
+    try {
+        const d = await API.get(url);
+        document.getElementById('list-loading').style.display = 'none';
+        document.getElementById('badge-total').textContent = d.total || 0;
+        document.getElementById('list-total-text').textContent = `共 ${d.total} 只`;
+
+        if (!d.items || !d.items.length) {
+            document.getElementById('list-table-wrap').innerHTML = emptyHTML('无匹配股票');
+            document.getElementById('list-pagination').style.display = 'none';
+            return;
+        }
+
+        document.getElementById('list-table-wrap').innerHTML = buildListTable(d.items);
+        renderPager(d.page, d.pages, d.total, d.per_page);
+    } catch(e) {
+        document.getElementById('list-loading').style.display = 'none';
+        document.getElementById('list-table-wrap').innerHTML = errorHTML('加载失败：' + e.message);
+    }
+}
+
+function buildListTable(items) {
+    const rows = items.map(r => {
+        const isManual = r.is_manual == 1;
+        const manualBadge = isManual
+            ? `<span class="badge bg-warning text-dark ms-1" title="手工固定，周刷新不删除"><i class="bi bi-pin-angle-fill"></i> 手工</span>`
+            : '';
+        const warnBadge = r.warning_level === '红'
+            ? '<span class="badge bg-danger ms-1">红警</span>'
+            : r.warning_level === '黄'
+            ? '<span class="badge bg-warning text-dark ms-1">黄警</span>'
+            : '';
+        const tierLabel = { core_holding: '核心', watch: '关注', reserve: '储备' }[r.tier] || r.tier || '';
+        const tierCls   = { core_holding: 'bg-danger', watch: 'bg-primary', reserve: 'bg-secondary' }[r.tier] || 'bg-secondary';
+        const typeName  = TYPE_NAMES[r.company_type] || r.company_type || '';
+        const typeCls   = TYPE_COLORS[r.company_type] || 'bg-secondary';
+        const peText = r.pe_ttm && r.pe_ttm !== '' ? parseFloat(r.pe_ttm).toFixed(1) : '—';
+        const pbText = r.pb    && r.pb    !== '' ? parseFloat(r.pb).toFixed(2) : '—';
+        const code6 = (r.ts_code || '').substring(0, 6);
+        const safeName = (r.company_name || '').replace(/['"]/g, '');
+
+        // 赛道层级 badge
+        const layerKey = r.ai_layer || 'unknown';
+        const layerName = LAYER_NAMES[layerKey] || layerKey;
+        const layerCls  = LAYER_COLORS[layerKey] || 'bg-secondary';
+        const layerBadge = `<span class="badge ${layerCls}" style="font-size:10px;cursor:pointer" onclick="filterByLayer('${layerKey}')" title="${layerName}">${layerName}</span>`;
+
+        // 净利润增速
+        let yoyHtml = '<span class="text-muted">—</span>';
+        if (r.netprofit_yoy !== '' && r.netprofit_yoy != null) {
+            const yoy = parseFloat(r.netprofit_yoy);
+            if (!isNaN(yoy)) {
+                const color = yoy >= 20 ? 'text-success fw-bold' : yoy >= 0 ? 'text-success' : yoy >= -20 ? 'text-warning' : 'text-danger';
+                const sign  = yoy > 0 ? '+' : '';
+                yoyHtml = `<span class="${color} small">${sign}${yoy.toFixed(1)}%</span>`;
+            }
+        }
+
+        // 最新动态（新闻标题截断）
+        let newsHtml = '';
+        if (r.latest_news) {
+            const short = r.latest_news.substring(0, 28);
+            const full  = (r.latest_news || '').replace(/"/g, '&quot;');
+            newsHtml = `<span class="text-muted small" style="font-size:11px" title="${full}">${short}${r.latest_news.length > 28 ? '…' : ''}</span>`;
+        }
+
+        return `<tr id="row-${r.ts_code}">
+            <td style="white-space:nowrap">
+                <strong>${r.company_name || ''}</strong>${manualBadge}${warnBadge}
+            </td>
+            <td><code class="small text-primary">${code6}</code></td>
+            <td>${layerBadge}</td>
+            <td><span class="badge ${typeCls} small">${typeName}</span></td>
+            <td><span class="badge ${tierCls} small">${tierLabel}</span></td>
+            <td class="text-end">${yoyHtml}</td>
+            <td class="text-end text-muted small">${peText}</td>
+            <td class="text-end text-muted small">${pbText}</td>
+            <td style="max-width:180px;overflow:hidden">${newsHtml}</td>
+            <td class="text-end" style="white-space:nowrap">
+                <button class="btn btn-xs btn-outline-primary py-0 px-1 me-1" style="font-size:11px"
+                    onclick="goAnalyze('${r.ts_code}')">分析</button>
+                <button class="btn btn-xs ${isManual ? 'btn-outline-warning' : 'btn-outline-danger'} py-0 px-1" style="font-size:11px"
+                    onclick="removeStock('${r.ts_code}', '${safeName}', ${isManual})"
+                    title="${isManual ? '手工股票，确认后移除（下次周刷新不会重新加入）' : '移除'}">
+                    ${isManual ? '<i class="bi bi-pin-angle"></i> 移除' : '移除'}
+                </button>
+            </td>
+        </tr>`;
+    }).join('');
+    const sortIcon = (col) => {
+        if (listSortBy !== col) return '<i class="bi bi-arrow-down-up text-muted ms-1" style="font-size:10px"></i>';
+        return listSortOrder === 'asc'
+            ? '<i class="bi bi-sort-up ms-1" style="font-size:10px"></i>'
+            : '<i class="bi bi-sort-down ms-1" style="font-size:10px"></i>';
+    };
+    const th = (label, col) => col
+        ? `<th class="sortable-th" style="cursor:pointer;user-select:none" onclick="sortList('${col}')">${label}${sortIcon(col)}</th>`
+        : `<th>${label}</th>`;
+    return `<div class="table-responsive">
+        <table class="table table-sm table-hover mb-0" id="list-table">
+            <thead class="table-light">
+                <tr>
+                    ${th('名称','name')}${th('代码','')}${th('赛道层级','')}${th('类型','')}${th('层级','tier')}
+                    ${th('利润增速','')}${th('PE','pe')}${th('PB','pb')}
+                    ${th('最新动态','')}${th('操作','')}
+                </tr>
+            </thead>
+            <tbody>${rows}</tbody>
+        </table>
+    </div>`;
+}
+
+function renderPager(page, pages, total, perPage) {
+    const pager = document.getElementById('pager');
+    const info  = document.getElementById('page-info');
+    const start = (page - 1) * perPage + 1;
+    const end   = Math.min(page * perPage, total);
+    info.textContent = `第 ${start}–${end} 条，共 ${total} 条`;
+    document.getElementById('list-pagination').style.display = pages > 1 ? '' : 'none';
+
+    const mkBtn = (p, label, disabled, active) =>
+        `<li class="page-item ${disabled ? 'disabled' : ''} ${active ? 'active' : ''}">
+            <a class="page-link py-1 px-2" href="#" onclick="loadList(${p});return false;">${label}</a>
+        </li>`;
+
+    let html = mkBtn(page - 1, '&laquo;', page <= 1, false);
+    // Show window of pages
+    const win = 3;
+    for (let p = Math.max(1, page - win); p <= Math.min(pages, page + win); p++) {
+        html += mkBtn(p, p, false, p === page);
+    }
+    html += mkBtn(page + 1, '&raquo;', page >= pages, false);
+    pager.innerHTML = html;
+}
+
+async function removeStock(tsCode, name, isManual) {
+    const msg = isManual
+        ? `"${name}" 是手工固定的股票，确认移除？（移除后本次周刷新不会重新加入）`
+        : `确认将 "${name}" 从股票池移除？`;
+    if (!confirm(msg)) return;
+
+    try {
+        const d = await API.post(`/api/pool/remove?ts_code=${encodeURIComponent(tsCode)}`);
+        if (d.success) {
+            // 行淡出
+            const row = document.getElementById(`row-${tsCode}`);
+            if (row) { row.style.opacity = '0.3'; row.style.transition = 'opacity 0.3s'; }
+            setTimeout(() => loadList(listCurrentPage), 400);
+            loadPoolStatus();
+            showToast('success', `已移除 ${name}`);
+        } else {
+            showToast('danger', d.error || '移除失败');
+        }
+    } catch(e) {
+        showToast('danger', '请求失败: ' + e.message);
+    }
+}
+
+function goAnalyze(tsCode) {
+    window.location.href = `/analyze?code=${encodeURIComponent(tsCode)}&autorun=1`;
+}
+
+// ── 手工加入股票 ──────────────────────────────────────
+let addSuggestTimer = null;
+let addResolvedCode = '';
+
+async function onAddStockInput(val) {
+    addResolvedCode = '';
+    document.getElementById('add-stock-name').textContent = '';
+    document.getElementById('add-suggest-box').style.display = 'none';
+    if (val.length < 2) return;
+    clearTimeout(addSuggestTimer);
+    addSuggestTimer = setTimeout(async () => {
+        try {
+            const d = await API.get(`/api/pool/search?q=${encodeURIComponent(val)}`);
+            showAddSuggest(d.results || []);
+        } catch(e) {}
+    }, 300);
+}
+
+function showAddSuggest(results) {
+    const box = document.getElementById('add-suggest-box');
+    if (!results.length) { box.style.display = 'none'; return; }
+    box.innerHTML = results.map(r =>
+        `<div class="px-3 py-2" style="cursor:pointer"
+              onmouseover="this.style.background='#f0f0f0'" onmouseout="this.style.background=''"
+              onclick="selectAddStock('${r.ts_code}','${r.name}','${r.industry||''}')">
+            <strong>${r.name}</strong>
+            <span class="text-muted small ms-2">${r.ts_code}</span>
+            <span class="text-muted small ms-2">${r.industry||''}</span>
+        </div>`
+    ).join('');
+    box.style.display = 'block';
+}
+
+function selectAddStock(code, name, industry) {
+    document.getElementById('add-stock-input').value = code;
+    document.getElementById('add-stock-name').textContent = `${name}  ${industry}`;
+    document.getElementById('add-suggest-box').style.display = 'none';
+    addResolvedCode = code;
+}
+
+async function submitAddStock() {
+    let input = document.getElementById('add-stock-input').value.trim();
+    if (!input) { alert('请输入股票代码或名称'); return; }
+
+    let code = addResolvedCode || input;
+    if (/^\d{6}$/.test(code)) code = code + (code.startsWith('6') ? '.SH' : '.SZ');
+
+    const tier  = document.getElementById('add-stock-tier').value;
+    const notes = document.getElementById('add-stock-notes').value.trim();
+
+    const btn = document.getElementById('add-stock-btn');
+    btn.disabled = true; btn.textContent = '加入中...';
+
+    try {
+        const d = await API.post(`/api/pool/add?ts_code=${encodeURIComponent(code)}&tier=${tier}&notes=${encodeURIComponent(notes)}`);
+        if (d.success) {
+            showToast('success', d.message);
+            bootstrap.Modal.getInstance(document.getElementById('addStockModal')).hide();
+            loadPoolStatus();
+            // 如果名单Tab已加载，刷新
+            if (listLoaded) loadList(1);
+        } else {
+            showToast('danger', d.error || '加入失败');
+        }
+    } catch(e) {
+        showToast('danger', '请求失败: ' + e.message);
+    }
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-check-circle me-1"></i>确认加入';
+}
+
+async function triggerWeeklyRefresh(btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>刷新中...';
+    try {
+        const d = await API.post('/api/pool/weekly_refresh?dry_run=false');
+        showToast(d.success ? 'success' : 'danger', d.message || d.error || '');
+        loadAll();
+    } catch (e) {
+        showToast('danger', '触发失败: ' + e.message);
+    }
+    setTimeout(() => {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-calendar-week me-1"></i>触发周刷新';
+    }, 3000);
+}
+
+function loadAll() {
+    loadPoolStatus();
+    listLoaded = false;
+    signalsLoaded = false;
+    healthLoaded = false;
+    valuationLoaded = false;
+    showTab('tab-list');
+}
+
+// ── 健康检查 Tab ──────────────────────────────────────
+async function loadHealth(forceRefresh) {
+    document.getElementById('health-loading').style.display = 'block';
+    document.getElementById('health-body').innerHTML = '';
+    document.getElementById('health-error').style.display = 'none';
+    if (forceRefresh) {
+        document.getElementById('health-loading').querySelector('span.spinner-border').insertAdjacentText('afterend', ' 正在重新拉取年报数据...');
+    }
+    try {
+        const url = `/api/pool/health_check${forceRefresh ? '?force_refresh=true' : ''}`;
+        const d = await API.get(url);
+        document.getElementById('health-loading').style.display = 'none';
+        if (d.error) {
+            document.getElementById('health-error').textContent = '加载失败：' + d.error;
+            document.getElementById('health-error').style.display = '';
+            return;
+        }
+        const s = d.summary || {};
+        // 顶部统计徽章
+        document.getElementById('health-summary-badges').innerHTML =
+            `<span class="badge bg-danger me-1">🔴 红灯 ${s.red || 0}</span>` +
+            `<span class="badge bg-warning text-dark me-1">🟡 黄灯 ${s.yellow || 0}</span>` +
+            `<span class="badge bg-success me-1">🟢 绿灯 ${s.green || 0}</span>`;
+        // 顶部Tab红灯计数
+        const redBadge = document.getElementById('badge-health-red');
+        if (s.red > 0) { redBadge.textContent = s.red; redBadge.style.display = ''; }
+        else { redBadge.style.display = 'none'; }
+        // 元数据
+        document.getElementById('health-meta').textContent =
+            `共 ${s.total || 0} 只 · 数据期：${d.data_period || '—'} · 检查时间：${d.checked_at || '—'}`;
+
+        document.getElementById('health-body').innerHTML = buildHealthTable(d.items || []);
+    } catch (e) {
+        document.getElementById('health-loading').style.display = 'none';
+        document.getElementById('health-error').textContent = '请求失败：' + e.message;
+        document.getElementById('health-error').style.display = '';
+    }
+}
+
+function buildHealthTable(items) {
+    if (!items.length) return emptyHTML('股票池为空');
+
+    const LIGHT_CONFIG = {
+        red:    { cls: 'table-danger',  badge: 'bg-danger',  icon: '🔴', label: '红灯·移除' },
+        yellow: { cls: 'table-warning', badge: 'bg-warning text-dark', icon: '🟡', label: '黄灯·关注' },
+        green:  { cls: '',              badge: 'bg-success',  icon: '🟢', label: '绿灯·健康' },
+    };
+    const TIER_LABEL = { core_holding: '核心', watch: '关注', reserve: '储备' };
+    const TIER_CLS   = { core_holding: 'bg-danger', watch: 'bg-primary', reserve: 'bg-secondary' };
+
+    // 按红黄绿分组渲染
+    const groups = { red: [], yellow: [], green: [] };
+    items.forEach(r => (groups[r.light] || groups.green).push(r));
+
+    let html = '';
+    ['red', 'yellow', 'green'].forEach(light => {
+        const rows = groups[light];
+        if (!rows.length) return;
+        const cfg = LIGHT_CONFIG[light];
+        html += `<div class="card mb-3 border-0">
+            <div class="card-header fw-bold ${light === 'red' ? 'bg-danger text-white' : light === 'yellow' ? 'bg-warning text-dark' : 'bg-success text-white'}">
+                ${cfg.icon} ${cfg.label}（${rows.length} 只）
+            </div>
+            <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>名称</th><th>代码</th><th>层级</th>
+                    <th>ROE</th><th>负债率</th><th>净利润YoY</th><th class="text-end">PE</th>
+                    <th>风险标签</th><th>评级原因 / 备注</th>
+                </tr>
+            </thead>
+            <tbody>`;
+        rows.forEach(r => {
+            const tierLabel = TIER_LABEL[r.tier] || r.tier || '';
+            const tierCls   = TIER_CLS[r.tier] || 'bg-secondary';
+            const code6 = (r.ts_code || '').substring(0, 6);
+            const tags  = r.risk_tags ? r.risk_tags.split('，').map(t =>
+                `<span class="badge bg-danger-subtle text-danger border border-danger-subtle me-1 small">${t}</span>`
+            ).join('') : '';
+            const reasonHtml = r.main_reason
+                ? `<span class="${light === 'green' ? 'text-success' : light === 'red' ? 'text-danger' : 'text-warning-emphasis'} small">${r.main_reason}</span>`
+                : '';
+            const noteHtml = r.notes
+                ? `<br><span class="text-info small"><i class="bi bi-info-circle me-1"></i>${r.notes}</span>`
+                : '';
+            const stBadge = r.is_st ? `<span class="badge bg-danger ms-1 small">ST</span>` : '';
+            html += `<tr class="${cfg.cls}">
+                <td><strong>${r.company_name || ''}</strong>${stBadge}</td>
+                <td><code class="small text-primary">${code6}</code></td>
+                <td><span class="badge ${tierCls} small">${tierLabel}</span></td>
+                <td class="small ${parseFloat(r.roe) < 0 ? 'text-danger' : 'text-muted'}">${r.roe || '—'}</td>
+                <td class="small text-muted">${r.debt_ratio || '—'}</td>
+                <td class="small ${parseFloat(r.netprofit_yoy) < -20 ? 'text-danger' : 'text-muted'}">${r.netprofit_yoy || '—'}</td>
+                <td class="text-end small text-muted">${r.pe_ttm != null && r.pe_ttm !== '' ? r.pe_ttm : '—'}</td>
+                <td>${tags}</td>
+                <td class="small">${reasonHtml}${noteHtml}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div></div>`;
+    });
+    return html;
+}
+
+// ── 估值一览 Tab ──────────────────────────────────────
+const VERDICT_CFG = {
+    '严重低估': { bg: 'bg-success',         text: 'text-white',      icon: '⬇⬇' },
+    '低估':     { bg: 'bg-success-subtle',  text: 'text-success',    icon: '⬇'  },
+    '合理':     { bg: 'bg-light',           text: 'text-secondary',  icon: '—'  },
+    '高估':     { bg: 'bg-warning-subtle',  text: 'text-warning-emphasis', icon: '⬆'  },
+    '严重高估': { bg: 'bg-danger-subtle',   text: 'text-danger',     icon: '⬆⬆' },
+    '数据不足': { bg: 'bg-light',           text: 'text-muted',      icon: '?'  },
+};
+
+async function loadValuation(forceRefresh) {
+    document.getElementById('val-loading').style.display = 'block';
+    document.getElementById('val-body').innerHTML = '';
+    document.getElementById('val-error').style.display = 'none';
+    try {
+        const url = `/api/pool/valuation${forceRefresh ? '?force_refresh=true' : ''}`;
+        const d = await API.get(url);
+        document.getElementById('val-loading').style.display = 'none';
+        if (d.error) {
+            document.getElementById('val-error').textContent = '加载失败：' + d.error;
+            document.getElementById('val-error').style.display = '';
+            return;
+        }
+        const s = d.summary || {};
+        // 顶部统计
+        document.getElementById('val-summary-badges').innerHTML =
+            `<span class="badge bg-success me-1">严重低估 ${s['严重低估']||0}</span>` +
+            `<span class="badge bg-success-subtle text-success border me-1">低估 ${s['低估']||0}</span>` +
+            `<span class="badge bg-secondary me-1">合理 ${s['合理']||0}</span>` +
+            `<span class="badge bg-warning text-dark me-1">高估 ${s['高估']||0}</span>` +
+            `<span class="badge bg-danger me-1">严重高估 ${s['严重高估']||0}</span>`;
+        // Tab 绿色徽章（严重低估数量）
+        const ulBadge = document.getElementById('badge-val-underval');
+        const ulCount = (s['严重低估']||0) + (s['低估']||0);
+        if (ulCount > 0) { ulBadge.textContent = ulCount; ulBadge.style.display = ''; }
+        document.getElementById('val-meta').textContent =
+            `共 ${s.total||0} 只 · 计算日期：${d.calc_date||'—'}`;
+        document.getElementById('val-body').innerHTML = buildValuationTable(d.items || []);
+    } catch (e) {
+        document.getElementById('val-loading').style.display = 'none';
+        document.getElementById('val-error').textContent = '请求失败：' + e.message;
+        document.getElementById('val-error').style.display = '';
+    }
+}
+
+function buildValuationTable(items) {
+    if (!items.length) return emptyHTML('股票池为空或无估值数据');
+
+    // 按 verdict 分组
+    const ORDER = ['严重低估', '低估', '合理', '高估', '严重高估', '数据不足'];
+    const groups = {};
+    ORDER.forEach(v => groups[v] = []);
+    items.forEach(r => {
+        const v = r.verdict || '数据不足';
+        if (groups[v]) groups[v].push(r); else groups['数据不足'].push(r);
+    });
+
+    let html = '';
+    ORDER.forEach(verd => {
+        const rows = groups[verd];
+        if (!rows.length) return;
+        const cfg = VERDICT_CFG[verd] || VERDICT_CFG['数据不足'];
+        const headerCls = verd === '严重低估' ? 'bg-success text-white'
+                        : verd === '低估'     ? 'bg-success-subtle text-success'
+                        : verd === '高估'     ? 'bg-warning text-dark'
+                        : verd === '严重高估' ? 'bg-danger text-white'
+                        : 'bg-light text-muted';
+        html += `<div class="card mb-3 border-0">
+            <div class="card-header fw-bold ${headerCls}">
+                ${cfg.icon} ${verd}（${rows.length} 只）
+            </div>
+            <div class="table-responsive">
+            <table class="table table-sm table-hover mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>名称</th><th>代码</th><th>行业类型</th>
+                    <th>估值方法</th><th class="text-end">上行空间</th>
+                    <th>计算依据</th>
+                </tr>
+            </thead>
+            <tbody>`;
+        rows.forEach(r => {
+            const code6 = (r.ts_code || '').substring(0, 6);
+            const upside = r.upside_pct != null && r.upside_pct !== ''
+                ? `<span class="${parseFloat(r.upside_pct) >= 0 ? 'text-success' : 'text-danger'} fw-semibold">${parseFloat(r.upside_pct) >= 0 ? '+' : ''}${parseFloat(r.upside_pct).toFixed(1)}%</span>`
+                : '<span class="text-muted">—</span>';
+            const verdBadge = `<span class="badge ${cfg.bg} ${cfg.text} border">${verd}</span>`;
+            html += `<tr>
+                <td><strong>${r.company_name || ''}</strong></td>
+                <td><code class="small text-primary">${code6}</code></td>
+                <td><span class="badge bg-secondary-subtle text-secondary border small">${r.itype || '—'}</span></td>
+                <td class="small text-muted">${r.val_method || '—'}</td>
+                <td class="text-end">${upside}</td>
+                <td class="small text-muted">${r.val_detail || '—'}</td>
+            </tr>`;
+        });
+        html += `</tbody></table></div></div>`;
+    });
+    return html;
+}
+
+loadAll();
+</script>
+{% endblock %}

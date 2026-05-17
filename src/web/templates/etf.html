@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}ETF策略{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-graph-up-arrow me-2 text-primary"></i>ETF 智能配置</h5>
+    <button class="btn btn-sm btn-outline-secondary" onclick="loadData()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<!-- 环境概览 -->
+<div class="row g-2 mb-3" id="env-cards">
+    <div class="col-12 text-center py-4 text-muted">
+        <div class="spinner-border spinner-border-sm me-2"></div>加载中...
+    </div>
+</div>
+
+<!-- 当前组合 -->
+<div class="card border-0 shadow-sm mb-3" id="portfolio-card" style="display:none">
+    <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold"><i class="bi bi-briefcase me-2 text-success"></i>当前组合持仓</span>
+        <span class="badge bg-secondary" id="portfolio-meta"></span>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr><th>代码</th><th>名称</th><th>权重</th><th>仓位条</th></tr>
+                </thead>
+                <tbody id="portfolio-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 推荐列表 -->
+<div class="card border-0 shadow-sm" id="recs-card" style="display:none">
+    <div class="card-header py-2 d-flex justify-content-between align-items-center">
+        <span class="fw-semibold"><i class="bi bi-star me-2 text-warning"></i>全量推荐</span>
+        <div class="d-flex gap-2 align-items-center">
+            <small class="text-muted" id="rec-date"></small>
+            <div class="btn-group btn-group-sm" role="group">
+                <button class="btn btn-outline-secondary active" onclick="filterRecs('all',this)">全部</button>
+                <button class="btn btn-outline-secondary" onclick="filterRecs('equity',this)">权益</button>
+                <button class="btn btn-outline-secondary" onclick="filterRecs('commodity',this)">大宗</button>
+                <button class="btn btn-outline-secondary" onclick="filterRecs('dividend',this)">红利</button>
+            </div>
+        </div>
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover table-sm align-middle mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>代码/名称</th>
+                        <th>类别</th>
+                        <th>综合评分</th>
+                        <th>动量分</th>
+                        <th>估值分位</th>
+                        <th>目标仓位</th>
+                        <th>操作</th>
+                        <th>信号</th>
+                    </tr>
+                </thead>
+                <tbody id="recs-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allRecs = [];
+let currentFilter = 'all';
+
+const CATEGORY_LABELS = { equity: '权益', commodity: '大宗', dividend: '红利', bond: '债券' };
+const CATEGORY_COLORS = { equity: 'primary', commodity: 'warning', dividend: 'success', bond: 'info' };
+function signalBadge(s) {
+    const map = { '强推荐': 'danger', '推荐': 'warning', '关注': 'info', '观望': 'secondary' };
+    const cls = map[s] || 'secondary';
+    return s ? `<span class="badge bg-${cls}">${s}</span>` : '-';
+}
+
+const CYCLE_LABELS    = { expansion: '扩张期', peak: '顶峰期', contraction: '收缩期', defensive: '防御期', recovery: '复苏期' };
+const MODE_LABELS     = { aggressive: '进攻', balanced: '均衡', defensive: '防御' };
+const MODE_COLORS     = { aggressive: 'success', balanced: 'warning', defensive: 'danger' };
+
+async function loadData() {
+    document.getElementById('env-cards').innerHTML =
+        '<div class="col-12 text-center py-4 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>加载中...</div>';
+    document.getElementById('portfolio-card').style.display = 'none';
+    document.getElementById('recs-card').style.display = 'none';
+
+    try {
+        const d = await API.get('/api/etf/qmt');
+        renderEnv(d);
+        renderPortfolio(d);
+        renderRecs(d);
+    } catch(e) {
+        document.getElementById('env-cards').innerHTML =
+            `<div class="col-12"><div class="alert alert-danger">加载失败: ${e.message || e}</div></div>`;
+    }
+}
+
+function renderEnv(d) {
+    const env = d.env || {};
+    const modeColor = MODE_COLORS[d.market_mode] || 'secondary';
+    const modeLabel = MODE_LABELS[d.market_mode] || d.market_mode;
+    const cycleLabel = CYCLE_LABELS[d.cycle] || d.cycle;
+    const riskBadge = env.risk_on
+        ? '<span class="badge bg-success">Risk On</span>'
+        : '<span class="badge bg-danger">Risk Off</span>';
+
+    const ret20 = env.market_ret20d || 0;
+    const retColor = ret20 >= 0 ? 'text-danger' : 'text-success';
+    const retSign  = ret20 >= 0 ? '+' : '';
+
+    document.getElementById('env-cards').innerHTML = `
+    <div class="col-md-3 col-6">
+        <div class="card border-0 shadow-sm text-center h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1">市场模式</div>
+                <div class="fs-4 fw-bold text-${modeColor}">${modeLabel}</div>
+                <div class="mt-1">${riskBadge}</div>
+                <div class="small text-muted mt-1" style="font-size:.75rem">${env.mode_reason || ''}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card border-0 shadow-sm text-center h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1">经济周期</div>
+                <div class="fs-4 fw-bold">${cycleLabel}</div>
+                <div class="small text-muted mt-2" style="font-size:.75rem">${env.cycle_reason || ''}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card border-0 shadow-sm text-center h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1">PMI / 10年期利率</div>
+                <div class="fs-4 fw-bold">${env.pmi ?? '-'}</div>
+                <div class="small text-muted">${env.rate_10y != null ? env.rate_10y.toFixed(3) + '%' : '-'}</div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card border-0 shadow-sm text-center h-100">
+            <div class="card-body py-3">
+                <div class="text-muted small mb-1">总仓位 / 持仓数</div>
+                <div class="fs-4 fw-bold">${d.total_weight}%</div>
+                <div class="small text-muted">${d.position_count} 只ETF</div>
+                <div class="small mt-1 ${ret20 >= 0 ? 'text-danger' : 'text-success'}" style="font-size:.75rem">
+                    市场20日: ${retSign}${ret20.toFixed(2)}%
+                </div>
+            </div>
+        </div>
+    </div>
+    ${d.rebalance ? `<div class="col-12"><div class="alert alert-info py-2 mb-0 small">
+        <i class="bi bi-arrow-repeat me-1"></i><strong>今日换仓</strong>：${d.rebalance_reason || ''}
+    </div></div>` : ''}`;
+}
+
+function renderPortfolio(d) {
+    const tbody = document.getElementById('portfolio-tbody');
+    if (!d.portfolio || d.portfolio.length === 0) return;
+
+    document.getElementById('portfolio-meta').textContent = `总仓位 ${d.total_weight}%`;
+    tbody.innerHTML = d.portfolio.map(p => `
+        <tr>
+            <td><strong class="font-monospace">${p.code}</strong></td>
+            <td>${p.name}</td>
+            <td class="fw-semibold">${p.weight}%</td>
+            <td style="min-width:100px">
+                <div class="progress" style="height:6px">
+                    <div class="progress-bar bg-success" style="width:${Math.min(p.weight/10*100,100)}%"></div>
+                </div>
+            </td>
+        </tr>`).join('');
+    document.getElementById('portfolio-card').style.display = '';
+}
+
+function renderRecs(d) {
+    allRecs = d.recommendations || [];
+    document.getElementById('rec-date').textContent = d.run_date ? `更新: ${d.run_date}` : '';
+    applyFilter(currentFilter);
+    document.getElementById('recs-card').style.display = '';
+}
+
+function filterRecs(cat, btn) {
+    currentFilter = cat;
+    document.querySelectorAll('#recs-card .btn-group button').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    applyFilter(cat);
+}
+
+function applyFilter(cat) {
+    const rows = cat === 'all' ? allRecs : allRecs.filter(r => r.category === cat);
+    const tbody = document.getElementById('recs-tbody');
+
+    if (rows.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted py-3">暂无数据</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = rows.map(r => {
+        const catColor = CATEGORY_COLORS[r.category] || 'secondary';
+        const catLabel = CATEGORY_LABELS[r.category] || r.category;
+        const actionBadge = r.etf_action === 'BUY'
+            ? '<span class="badge bg-danger">买入</span>'
+            : r.etf_action === 'SELL'
+            ? '<span class="badge bg-success">卖出</span>'
+            : '<span class="badge bg-secondary">持有</span>';
+        const inPort = r.in_portfolio
+            ? `<span class="badge bg-success ms-1" title="已在组合中 ${r.weight}%">持仓${r.weight}%</span>`
+            : '';
+        const valStr = r.val_pct != null ? `${r.val_pct}%分位` : r.val_method || '-';
+        const scoreW = Math.round(r.final_score * 100);
+        const momW   = Math.round(r.mom_score * 100);
+
+        return `<tr>
+            <td>
+                <span class="font-monospace fw-semibold">${r.code}</span>${inPort}
+                <br><small class="text-muted">${r.name}</small>
+            </td>
+            <td><span class="badge bg-${catColor}">${catLabel}</span></td>
+            <td>
+                <div class="d-flex align-items-center gap-1">
+                    <div class="progress flex-grow-1" style="height:6px;min-width:50px">
+                        <div class="progress-bar bg-primary" style="width:${scoreW}%"></div>
+                    </div>
+                    <small class="text-muted">${r.final_score.toFixed(3)}</small>
+                </div>
+            </td>
+            <td>
+                <div class="d-flex align-items-center gap-1">
+                    <div class="progress flex-grow-1" style="height:6px;min-width:50px">
+                        <div class="progress-bar bg-info" style="width:${momW}%"></div>
+                    </div>
+                    <small class="text-muted">${r.mom_score.toFixed(3)}</small>
+                </div>
+            </td>
+            <td><small class="text-muted">${valStr}</small></td>
+            <td>${r.target_pos || '-'}</td>
+            <td>${actionBadge}</td>
+            <td>${signalBadge(r.etf_signal)}</td>
+        </tr>`;
+    }).join('');
+}
+
+loadData();
+</script>
+{% endblock %}

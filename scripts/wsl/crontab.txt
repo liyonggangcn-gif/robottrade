@@ -1,0 +1,19 @@
+# 量化选股 - WSL Cron 定时任务
+# 安装: 在 WSL 中运行 bash scripts/wsl/install_cron.sh
+# 时间均为系统本地时间（与 Windows 一致）
+# 1-5 = 周一到周五（交易日）
+
+# 8:00 数据同步+选股
+0 8 * * 1-5 /mnt/e/SynologyDrive/robottrade/scripts/wsl/run_data_sync.sh
+
+# 8:30 早盘推送
+30 8 * * 1-5 /mnt/e/SynologyDrive/robottrade/scripts/wsl/run_morning_push.sh
+
+# 8:30 小市值周选股推送（仅周一）
+30 8 * * 1 /mnt/e/SynologyDrive/robottrade/scripts/wsl/run_weekly_small_cap_push.sh
+
+# 16:00 收盘推送
+0 16 * * 1-5 /mnt/e/SynologyDrive/robottrade/scripts/wsl/run_evening_push.sh
+
+# 周日 03:30 批量同步财务数据（ROE/毛利率/净利润增长，季报数据，周频足够）
+30 3 * * 0 cd /home/li/robottrade && . venv/bin/activate && python scripts/sync_financial_data.py >> logs/sync_financial_$(date +\%Y\%m\%d).log 2>&1

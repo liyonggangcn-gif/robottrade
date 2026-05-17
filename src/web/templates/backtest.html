@@ -1,0 +1,526 @@
+{% extends "base.html" %}
+{% block title %}策略回测{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-clock-history me-2 text-primary"></i>策略回测</h5>
+    <small class="text-muted">多策略并行回测，等权持仓，支持止损/止盈模拟</small>
+</div>
+
+<!-- 参数设置卡片 -->
+<div class="card border-0 shadow-sm mb-3">
+    <div class="card-header bg-white py-2">
+        <strong><i class="bi bi-sliders me-2 text-secondary"></i>回测参数</strong>
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <!-- 日期区间 -->
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">开始日期</label>
+                <input type="date" id="start-date" class="form-control form-control-sm">
+            </div>
+            <div class="col-md-3">
+                <label class="form-label small text-muted mb-1">结束日期</label>
+                <input type="date" id="end-date" class="form-control form-control-sm">
+            </div>
+            <!-- 换仓周期 -->
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">换仓周期（交易日）</label>
+                <input type="number" id="rebalance" class="form-control form-control-sm" value="5" min="1" max="20">
+            </div>
+            <!-- 选股数量 -->
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">选股数量</label>
+                <input type="number" id="top-k" class="form-control form-control-sm" value="10" min="5" max="50">
+            </div>
+            <!-- 止损 -->
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">硬止损（%，0=不用）</label>
+                <input type="number" id="stop-loss" class="form-control form-control-sm" value="8" min="0" max="30" step="1">
+            </div>
+            <!-- 止盈 -->
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">滑动止盈回落（%，0=不用）</label>
+                <input type="number" id="trailing" class="form-control form-control-sm" value="5" min="0" max="20" step="1">
+            </div>
+            <!-- 佣金 -->
+            <div class="col-md-2">
+                <label class="form-label small text-muted mb-1">单边佣金率（‱）</label>
+                <input type="number" id="cost" class="form-control form-control-sm" value="3" min="0" max="30" step="1">
+                <div class="form-text text-muted" style="font-size:11px">默认3‱(0.03%)，卖出额外加印花税0.1%</div>
+            </div>
+        </div>
+
+        <!-- 策略选择 -->
+        <div class="row g-2 mt-2">
+            <div class="col-12">
+                <label class="form-label small text-muted mb-1">回测策略</label>
+                <div class="d-flex flex-wrap gap-3">
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="st-tech" value="tech" checked>
+                        <label class="form-check-label small" for="st-tech">
+                            <span class="badge bg-primary me-1">A</span>技术动量
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="st-value" value="value" checked>
+                        <label class="form-check-label small" for="st-value">
+                            <span class="badge bg-success me-1">B</span>价值质量
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="st-lowvol" value="lowvol">
+                        <label class="form-check-label small" for="st-lowvol">
+                            <span class="badge bg-info text-dark me-1">C</span>低波动
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="st-reversal" value="reversal">
+                        <label class="form-check-label small" for="st-reversal">
+                            <span class="badge bg-warning text-dark me-1">D</span>短期反转
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="st-sector" value="sector_rotation" checked>
+                        <label class="form-check-label small" for="st-sector">
+                            <span class="badge bg-danger me-1">E</span>行业轮动
+                        </label>
+                    </div>
+                    <div class="form-check">
+                        <input class="form-check-input" type="checkbox" id="st-pullback" value="pullback_stab">
+                        <label class="form-check-label small" for="st-pullback">
+                            <span class="badge bg-secondary me-1">F</span>回调企稳
+                        </label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 运行按钮 -->
+        <div class="mt-3">
+            <button class="btn btn-primary" id="run-btn" onclick="runBacktest()">
+                <i class="bi bi-play-fill me-1"></i>开始回测
+            </button>
+            <small class="text-muted ms-3">回测时间约 30~120 秒，请耐心等待</small>
+        </div>
+    </div>
+</div>
+
+<!-- 进度条 -->
+<div id="progress-wrap" class="card border-0 shadow-sm mb-3 d-none">
+    <div class="card-body py-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <span class="small" id="progress-msg">初始化...</span>
+            <span class="small text-muted" id="progress-pct">0%</span>
+        </div>
+        <div class="progress" style="height:8px">
+            <div class="progress-bar progress-bar-striped progress-bar-animated bg-primary"
+                 id="progress-bar" style="width:0%"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 错误提示 -->
+<div id="error-wrap" class="alert alert-danger d-none">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    <span id="error-msg"></span>
+</div>
+
+<!-- 结果区域 -->
+<div id="result-wrap" class="d-none">
+
+    <!-- 基准说明 -->
+    <div class="alert alert-light border small mb-3" id="bm-info">
+        <i class="bi bi-info-circle me-1"></i>
+        基准：全市场等权（等权BM）&nbsp;|&nbsp;中证A500
+        &nbsp;|&nbsp;<span id="bm-ret-text"></span>
+    </div>
+
+    <!-- 策略指标对比表 -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white py-2">
+            <strong><i class="bi bi-table me-2 text-secondary"></i>策略指标对比</strong>
+        </div>
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-sm align-middle mb-0" id="metrics-table">
+                    <thead class="table-light">
+                        <tr>
+                            <th>策略</th>
+                            <th class="text-end">总收益</th>
+                            <th class="text-end">年化</th>
+                            <th class="text-end">最大回撤</th>
+                            <th class="text-end">Sharpe</th>
+                            <th class="text-end">胜率</th>
+                            <th class="text-end">超额(等权)</th>
+                            <th class="text-end">换仓次数</th>
+                        </tr>
+                    </thead>
+                    <tbody id="metrics-tbody"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 净值曲线 -->
+    <div class="card border-0 shadow-sm mb-3">
+        <div class="card-header bg-white py-2">
+            <strong><i class="bi bi-graph-up me-2 text-secondary"></i>净值曲线</strong>
+        </div>
+        <div class="card-body">
+            <canvas id="nav-chart" height="100"></canvas>
+        </div>
+    </div>
+
+    <!-- 换仓明细折叠面板 -->
+    <div class="card border-0 shadow-sm">
+        <div class="card-header bg-white py-2 d-flex justify-content-between align-items-center">
+            <strong><i class="bi bi-list-ul me-2 text-secondary"></i>换仓明细</strong>
+            <div class="d-flex gap-2 align-items-center">
+                <label class="form-label mb-0 small text-muted">策略</label>
+                <select id="detail-strategy-select" class="form-select form-select-sm" style="width:auto" onchange="renderPeriods()">
+                </select>
+            </div>
+        </div>
+        <div class="card-body p-0">
+            <div class="accordion accordion-flush" id="periods-accordion"></div>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── 默认日期：最近90天 ────────────────────────────────────────────────
+(function() {
+    const today = new Date();
+    const end = today.toISOString().slice(0, 10);
+    const start90 = new Date(today);
+    start90.setDate(start90.getDate() - 90);
+    const start = start90.toISOString().slice(0, 10);
+    document.getElementById('start-date').value = start;
+    document.getElementById('end-date').value = end;
+})();
+
+let currentJobId = null;
+let pollTimer = null;
+let navChart = null;
+let lastResult = null;
+
+// 调色板（策略颜色）
+const STRATEGY_COLORS = {
+    'tech':            '#0d6efd',
+    'value':           '#198754',
+    'lowvol':          '#0dcaf0',
+    'reversal':        '#ffc107',
+    'sector_rotation': '#dc3545',
+    'pullback_stab':   '#6c757d',
+};
+const BM_COLOR      = '#adb5bd';
+const A500_COLOR    = '#fd7e14';
+
+function runBacktest() {
+    // 收集策略
+    const strategies = [];
+    document.querySelectorAll('.form-check-input[type=checkbox]').forEach(cb => {
+        if (cb.checked) strategies.push(cb.value);
+    });
+    if (strategies.length === 0) {
+        alert('请至少选择一种策略');
+        return;
+    }
+
+    const startDate  = document.getElementById('start-date').value;
+    const endDate    = document.getElementById('end-date').value;
+    const rebalance  = parseInt(document.getElementById('rebalance').value) || 5;
+    const topK       = parseInt(document.getElementById('top-k').value) || 10;
+    const stopLoss   = parseFloat(document.getElementById('stop-loss').value) / 100 || 0.08;
+    const trailing   = parseFloat(document.getElementById('trailing').value) / 100 || 0.05;
+    const costBpts   = parseFloat(document.getElementById('cost').value) || 3;
+    const cost       = costBpts / 10000;
+
+    if (!startDate || !endDate) { alert('请填写日期区间'); return; }
+    if (startDate >= endDate) { alert('结束日期必须晚于开始日期'); return; }
+
+    // 重置 UI
+    document.getElementById('error-wrap').classList.add('d-none');
+    document.getElementById('result-wrap').classList.add('d-none');
+    document.getElementById('progress-wrap').classList.remove('d-none');
+    setProgress(0, '提交回测请求...');
+    document.getElementById('run-btn').disabled = true;
+
+    API.post('/api/backtest/run', {
+        start_date: startDate, end_date: endDate,
+        rebalance, top_k: topK,
+        stop_loss: stopLoss, trailing, cost,
+        strategies,
+    }).then(data => {
+        if (data.error) throw new Error(data.error);
+        currentJobId = data.job_id;
+        startPolling();
+    }).catch(e => showError(e.message || '提交失败'));
+}
+
+function setProgress(pct, msg) {
+    document.getElementById('progress-pct').textContent = pct + '%';
+    document.getElementById('progress-msg').textContent = msg;
+    document.getElementById('progress-bar').style.width = pct + '%';
+}
+
+function startPolling() {
+    if (pollTimer) clearInterval(pollTimer);
+    pollTimer = setInterval(pollStatus, 2000);
+}
+
+async function pollStatus() {
+    if (!currentJobId) return;
+    try {
+        const d = await API.get('/api/backtest/status/' + currentJobId);
+        setProgress(d.progress || 0, d.message || '...');
+
+        if (d.status === 'done') {
+            clearInterval(pollTimer);
+            document.getElementById('progress-wrap').classList.add('d-none');
+            document.getElementById('run-btn').disabled = false;
+            renderResult(d.result);
+        } else if (d.status === 'error') {
+            clearInterval(pollTimer);
+            document.getElementById('progress-wrap').classList.add('d-none');
+            document.getElementById('run-btn').disabled = false;
+            showError(d.error || '未知错误');
+        }
+    } catch(e) {
+        // 网络抖动时继续轮询
+    }
+}
+
+function showError(msg) {
+    const wrap = document.getElementById('error-wrap');
+    wrap.classList.remove('d-none');
+    document.getElementById('error-msg').textContent = msg;
+}
+
+// ── 渲染结果 ─────────────────────────────────────────────────────────────
+function renderResult(result) {
+    lastResult = result;
+    document.getElementById('result-wrap').classList.remove('d-none');
+
+    // 基准说明
+    const bm = result.benchmark || {};
+    let bmText = '';
+    if (bm.bm_total_ret !== undefined) bmText += `等权BM: ${fmtPct(bm.bm_total_ret)}`;
+    if (bm.a500_total_ret !== null && bm.a500_total_ret !== undefined)
+        bmText += `　　中证A500: ${fmtPct(bm.a500_total_ret)}`;
+    document.getElementById('bm-ret-text').textContent = bmText;
+
+    renderMetricsTable(result.strategies);
+    renderNavChart(result.strategies);
+    renderStrategySelect(result.strategies);
+    renderPeriods();
+}
+
+function fmtPct(v, digits=2) {
+    if (v === null || v === undefined) return 'N/A';
+    const sign = v >= 0 ? '+' : '';
+    return `${sign}${v.toFixed(digits)}%`;
+}
+
+function pctClass(v) {
+    if (v > 0) return 'text-danger fw-semibold';
+    if (v < 0) return 'text-success fw-semibold';
+    return 'text-muted';
+}
+
+function renderMetricsTable(strategies) {
+    const tbody = document.getElementById('metrics-tbody');
+    tbody.innerHTML = '';
+    for (const [name, s] of Object.entries(strategies)) {
+        const m = s.metrics;
+        const color = STRATEGY_COLORS[name] || '#333';
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>
+                <span class="badge rounded-pill me-1" style="background:${color}">&nbsp;</span>
+                <strong>${s.label}</strong>
+            </td>
+            <td class="text-end ${pctClass(m.total_ret)}">${fmtPct(m.total_ret)}</td>
+            <td class="text-end ${pctClass(m.annual_ret)}">${fmtPct(m.annual_ret)}</td>
+            <td class="text-end text-danger">${fmtPct(m.max_dd)}</td>
+            <td class="text-end">${m.sharpe.toFixed(2)}</td>
+            <td class="text-end">${m.win_rate.toFixed(1)}%</td>
+            <td class="text-end ${pctClass(m.alpha)}">${fmtPct(m.alpha)}</td>
+            <td class="text-end text-muted">${m.n_periods}</td>
+        `;
+        tbody.appendChild(tr);
+    }
+}
+
+function renderNavChart(strategies) {
+    const ctx = document.getElementById('nav-chart').getContext('2d');
+    if (navChart) navChart.destroy();
+
+    const datasets = [];
+    let labelsArr = null;
+
+    for (const [name, s] of Object.entries(strategies)) {
+        if (!labelsArr && s.period_labels) {
+            // prepend blank for initial NAV=1.0 point
+            labelsArr = ['开始', ...s.period_labels];
+        }
+        const color = STRATEGY_COLORS[name] || '#333';
+        datasets.push({
+            label: s.label,
+            data: [1.0, ...s.nav],
+            borderColor: color,
+            backgroundColor: color + '18',
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: false,
+        });
+    }
+
+    // 基准（等权）- use first strategy's bm_nav
+    const firstStrategy = Object.values(strategies)[0];
+    if (firstStrategy && firstStrategy.bm_nav) {
+        datasets.push({
+            label: '等权BM',
+            data: [1.0, ...firstStrategy.bm_nav],
+            borderColor: BM_COLOR,
+            borderDash: [5, 3],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: false,
+        });
+    }
+    if (firstStrategy && firstStrategy.a500_nav) {
+        datasets.push({
+            label: '中证A500',
+            data: [1.0, ...firstStrategy.a500_nav],
+            borderColor: A500_COLOR,
+            borderDash: [3, 3],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.3,
+            fill: false,
+        });
+    }
+
+    navChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labelsArr || [],
+            datasets,
+        },
+        options: {
+            responsive: true,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+                legend: { position: 'top', labels: { boxWidth: 12, font: { size: 12 } } },
+                tooltip: {
+                    callbacks: {
+                        label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y.toFixed(4)}`,
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    ticks: {
+                        maxTicksLimit: 12,
+                        font: { size: 11 },
+                        maxRotation: 30,
+                    }
+                },
+                y: {
+                    title: { display: true, text: '净值', font: { size: 11 } },
+                    ticks: { font: { size: 11 } },
+                }
+            }
+        }
+    });
+}
+
+function renderStrategySelect(strategies) {
+    const sel = document.getElementById('detail-strategy-select');
+    sel.innerHTML = '';
+    for (const [name, s] of Object.entries(strategies)) {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = s.label;
+        sel.appendChild(opt);
+    }
+}
+
+function renderPeriods() {
+    if (!lastResult) return;
+    const selName = document.getElementById('detail-strategy-select').value;
+    const s = lastResult.strategies[selName];
+    if (!s) return;
+
+    const acc = document.getElementById('periods-accordion');
+    acc.innerHTML = '';
+
+    s.periods.forEach((p, idx) => {
+        const retClass = p.port_ret >= 0 ? 'text-danger' : 'text-success';
+        const retSign = p.port_ret >= 0 ? '+' : '';
+        const itemId = `period-${idx}`;
+
+        // Build stock rows
+        let stockRows = '';
+        if (p.stocks && p.stocks.length > 0) {
+            const sorted = [...p.stocks].sort((a, b) => b.ret - a.ret);
+            stockRows = sorted.map(st => {
+                const rc = st.ret >= 0 ? 'text-danger' : 'text-success';
+                const rs = st.ret >= 0 ? '+' : '';
+                const tag = st.exit_type === 'stop_loss'
+                    ? '<span class="badge bg-danger ms-1" style="font-size:10px">止损</span>'
+                    : st.exit_type === 'trailing_stop'
+                    ? '<span class="badge bg-warning text-dark ms-1" style="font-size:10px">止盈</span>'
+                    : '';
+                return `<tr>
+                    <td class="ps-4"><small>${st.ts_code}</small></td>
+                    <td><small>${st.name}${tag}</small></td>
+                    <td><small class="text-muted">${st.industry || '-'}</small></td>
+                    <td class="text-end"><small class="${rc} fw-semibold">${rs}${st.ret.toFixed(2)}%</small></td>
+                </tr>`;
+            }).join('');
+        }
+
+        const slInfo = (p.sl_hits > 0 || p.tp_hits > 0)
+            ? `&nbsp;止损${p.sl_hits} 止盈${p.tp_hits}`
+            : '';
+
+        acc.innerHTML += `
+        <div class="accordion-item border-0 border-bottom">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed py-2 small bg-white" type="button"
+                        data-bs-toggle="collapse" data-bs-target="#${itemId}">
+                    <span class="me-3 text-muted">${p.sel_date} → ${p.exit_date}</span>
+                    <span class="${retClass} fw-semibold me-3">${retSign}${p.port_ret.toFixed(2)}%</span>
+                    <span class="text-muted">涨${p.win}跌${p.lose}&nbsp;|&nbsp;${p.n_stocks}只${slInfo}&nbsp;|&nbsp;换手${p.turnover.toFixed(1)}%</span>
+                </button>
+            </h2>
+            <div id="${itemId}" class="accordion-collapse collapse">
+                <div class="accordion-body p-0">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead class="table-light">
+                            <tr>
+                                <th class="ps-4">代码</th><th>名称</th>
+                                <th>行业</th><th class="text-end">收益</th>
+                            </tr>
+                        </thead>
+                        <tbody>${stockRows || '<tr><td colspan="4" class="text-muted ps-4 py-2">无持仓数据</td></tr>'}</tbody>
+                    </table>
+                </div>
+            </div>
+        </div>`;
+    });
+
+    if (s.periods.length === 0) {
+        acc.innerHTML = '<div class="p-3 text-muted small">无换仓记录</div>';
+    }
+}
+</script>
+{% endblock %}

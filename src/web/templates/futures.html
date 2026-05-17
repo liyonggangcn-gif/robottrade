@@ -1,0 +1,205 @@
+{% extends "base.html" %}
+{% block title %}期货监控{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h5 class="mb-0"><i class="bi bi-bar-chart-line me-2 text-primary"></i>商品期货主力合约</h5>
+    <div class="d-flex gap-2 align-items-center">
+        <small class="text-muted" id="data-time"></small>
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadOverview()">
+            <i class="bi bi-arrow-clockwise me-1"></i>刷新
+        </button>
+    </div>
+</div>
+
+<!-- 类别筛选 -->
+<div class="mb-3 d-flex flex-wrap gap-2" id="cat-filter">
+    <button class="btn btn-sm btn-primary active" onclick="filterCat(this,'')">全部</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="filterCat(this,'贵金属')">贵金属</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="filterCat(this,'能源')">能源</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="filterCat(this,'黑色金属')">黑色金属</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="filterCat(this,'有色金属')">有色金属</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="filterCat(this,'农产品')">农产品</button>
+    <button class="btn btn-sm btn-outline-secondary" onclick="filterCat(this,'能源化工')">能源化工</button>
+</div>
+
+<!-- 期货卡片网格 -->
+<div id="futures-grid" class="row g-3 mb-4">
+    <div class="col-12 text-center py-5 text-muted">
+        <div class="spinner-border spinner-border-sm me-2"></div>加载中（约15秒）...
+    </div>
+</div>
+
+<!-- K线详情模态框 -->
+<div class="modal fade" id="klineModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h6 class="modal-title" id="kline-title">K线走势</h6>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <canvas id="kline-chart" height="120"></canvas>
+                <div id="kline-stats" class="row g-2 mt-2 small text-muted"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allItems = [];
+let activeCat = '';
+let klineChart = null;
+
+function filterCat(btn, cat) {
+    document.querySelectorAll('#cat-filter button').forEach(b => {
+        b.className = 'btn btn-sm btn-outline-secondary';
+    });
+    btn.className = 'btn btn-sm btn-primary active';
+    activeCat = cat;
+    renderGrid();
+}
+
+function pctColor(v) {
+    if (v > 0) return 'text-danger';
+    if (v < 0) return 'text-success';
+    return 'text-muted';
+}
+
+function miniSparkline(series, pct30d) {
+    if (!series || series.length < 2) return '';
+    const w = 80, h = 30;
+    const min = Math.min(...series), max = Math.max(...series);
+    const range = max - min || 1;
+    const pts = series.map((v, i) => {
+        const x = (i / (series.length - 1)) * w;
+        const y = h - ((v - min) / range) * h;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    const color = pct30d >= 0 ? '#dc3545' : '#198754';
+    return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+        <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.5"/>
+    </svg>`;
+}
+
+function renderGrid() {
+    const grid = document.getElementById('futures-grid');
+    const items = activeCat ? allItems.filter(x => x.category === activeCat) : allItems;
+    if (!items.length) {
+        grid.innerHTML = '<div class="col-12 text-center py-4 text-muted">暂无数据</div>';
+        return;
+    }
+    let html = '';
+    for (const r of items) {
+        const pctCls = pctColor(r.pct_chg);
+        const pct30Cls = pctColor(r.pct_30d);
+        const sign = r.pct_chg > 0 ? '+' : '';
+        const sign30 = r.pct_30d > 0 ? '+' : '';
+        html += `<div class="col-sm-6 col-lg-4 col-xl-3">
+        <div class="card border-0 shadow-sm h-100 cursor-pointer" onclick="showKline('${r.symbol}','${r.name}')" style="cursor:pointer">
+            <div class="card-body p-3">
+                <div class="d-flex justify-content-between align-items-start mb-1">
+                    <div>
+                        <div class="fw-semibold">${r.name}</div>
+                        <small class="text-muted">${r.symbol} · ${r.unit}</small>
+                    </div>
+                    <span class="badge bg-light text-muted border small">${r.category}</span>
+                </div>
+                <div class="d-flex justify-content-between align-items-end mt-2">
+                    <div>
+                        <div class="fs-5 fw-bold">${r.close.toLocaleString()}</div>
+                        <div class="${pctCls} small fw-semibold">${sign}${r.pct_chg.toFixed(2)}%
+                            <span class="text-muted fw-normal ms-2">30日${sign30}<span class="${pct30Cls}">${r.pct_30d.toFixed(1)}%</span></span>
+                        </div>
+                    </div>
+                    <div class="text-end">
+                        ${miniSparkline(r.series, r.pct_30d)}
+                        <div class="text-muted" style="font-size:10px;margin-top:2px">${r.trade_date}</div>
+                    </div>
+                </div>
+            </div>
+        </div></div>`;
+    }
+    grid.innerHTML = html;
+}
+
+async function loadOverview() {
+    const grid = document.getElementById('futures-grid');
+    grid.innerHTML = '<div class="col-12 text-center py-5 text-muted"><div class="spinner-border spinner-border-sm me-2"></div>加载中（约15秒）...</div>';
+    try {
+        const data = await API.get('/api/futures/overview');
+        if (data.error) { grid.innerHTML = `<div class="col-12"><div class="alert alert-warning">${data.error}</div></div>`; return; }
+        allItems = data.items || [];
+        document.getElementById('data-time').textContent = allItems.length ? `数据截至 ${allItems[0].trade_date}  共${allItems.length}个品种` : '';
+        renderGrid();
+    } catch(e) {
+        grid.innerHTML = `<div class="col-12"><div class="alert alert-danger">加载失败: ${e.message||e}</div></div>`;
+    }
+}
+
+async function showKline(symbol, name) {
+    document.getElementById('kline-title').textContent = `${name}（${symbol}）近90日走势`;
+    document.getElementById('kline-stats').innerHTML = '<div class="text-muted">加载中...</div>';
+    const modal = new bootstrap.Modal(document.getElementById('klineModal'));
+    modal.show();
+
+    try {
+        const data = await API.get(`/api/futures/kline?symbol=${symbol}&days=90`);
+        if (!data.kline || !data.kline.length) { document.getElementById('kline-stats').innerHTML = '<div class="text-warning">暂无K线数据</div>'; return; }
+
+        const labels = data.kline.map(x => x.date);
+        const closes = data.kline.map(x => x.close);
+        const item = allItems.find(x => x.symbol === symbol) || {};
+
+        if (klineChart) klineChart.destroy();
+        const ctx = document.getElementById('kline-chart').getContext('2d');
+        klineChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: '收盘价',
+                    data: closes,
+                    borderColor: item.pct_30d >= 0 ? '#dc3545' : '#198754',
+                    borderWidth: 1.5,
+                    pointRadius: 0,
+                    fill: false,
+                    tension: 0.1,
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { maxTicksLimit: 8, font: { size: 10 } } },
+                    y: { ticks: { font: { size: 10 } } }
+                }
+            }
+        });
+
+        // 统计数据
+        const max90 = Math.max(...closes), min90 = Math.min(...closes);
+        const latest = closes[closes.length - 1];
+        document.getElementById('kline-stats').innerHTML = `
+            <div class="col-4 col-md-3"><div class="text-center border rounded p-2">
+                <div class="small text-muted">最新价</div><div class="fw-bold">${latest.toLocaleString()}</div>
+            </div></div>
+            <div class="col-4 col-md-3"><div class="text-center border rounded p-2">
+                <div class="small text-muted">90日高点</div><div class="text-danger fw-bold">${max90.toLocaleString()}</div>
+            </div></div>
+            <div class="col-4 col-md-3"><div class="text-center border rounded p-2">
+                <div class="small text-muted">90日低点</div><div class="text-success fw-bold">${min90.toLocaleString()}</div>
+            </div></div>
+            <div class="col-4 col-md-3"><div class="text-center border rounded p-2">
+                <div class="small text-muted">距高点</div><div class="fw-bold">${(((latest-max90)/max90)*100).toFixed(1)}%</div>
+            </div></div>`;
+    } catch(e) {
+        document.getElementById('kline-stats').innerHTML = `<div class="text-danger">加载失败: ${e}</div>`;
+    }
+}
+
+loadOverview();
+</script>
+{% endblock %}

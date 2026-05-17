@@ -1,0 +1,231 @@
+{% extends "base.html" %}
+{% block title %}数据源状态{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-database-check me-2 text-info"></i>数据源状态</h5>
+    <button class="btn btn-sm btn-outline-primary" onclick="loadStatus()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<!-- 数据源卡片 -->
+<div class="row g-3 mb-4" id="source-cards">
+    <div class="col-md-3 col-6">
+        <div class="card text-center" id="card-akshare">
+            <div class="card-body py-3">
+                <i class="bi bi-cloud fs-3 text-primary"></i>
+                <div class="mt-2 fw-bold">AKShare</div>
+                <div class="small text-muted" id="ver-akshare">—</div>
+                <div class="mt-1" id="status-akshare"><span class="spinner-border spinner-border-sm"></span></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card text-center" id="card-efinance">
+            <div class="card-body py-3">
+                <i class="bi bi-graph-up fs-3 text-success"></i>
+                <div class="mt-2 fw-bold">eFinance</div>
+                <div class="small text-muted" id="ver-efinance">—</div>
+                <div class="mt-1" id="status-efinance"><span class="spinner-border spinner-border-sm"></span></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card text-center" id="card-baostock">
+            <div class="card-body py-3">
+                <i class="bi bi-database fs-3 text-warning"></i>
+                <div class="mt-2 fw-bold">Baostock</div>
+                <div class="small text-muted" id="ver-baostock">—</div>
+                <div class="mt-1" id="status-baostock"><span class="spinner-border spinner-border-sm"></span></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3 col-6">
+        <div class="card text-center" id="card-tushare">
+            <div class="card-body py-3">
+                <i class="bi bi-currency-exchange fs-3 text-danger"></i>
+                <div class="mt-2 fw-bold">Tushare</div>
+                <div class="small text-muted" id="ver-tushare">—</div>
+                <div class="mt-1" id="status-tushare"><span class="spinner-border spinner-border-sm"></span></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 数据覆盖矩阵 -->
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <i class="bi bi-grid-3x3-gap me-1"></i>数据覆盖矩阵
+    </div>
+    <div class="card-body p-0">
+        <div class="table-responsive">
+            <table class="table table-hover mb-0">
+                <thead class="table-light">
+                    <tr>
+                        <th>数据类型</th>
+                        <th class="text-center">AKShare</th>
+                        <th class="text-center">eFinance</th>
+                        <th class="text-center">Baostock</th>
+                        <th class="text-center">Tushare</th>
+                    </tr>
+                </thead>
+                <tbody id="coverage-table">
+                    <tr><td colspan="5" class="text-center py-3"><span class="spinner-border spinner-border-sm"></span>加载中...</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- 数据库状态 -->
+<div class="card mb-4">
+    <div class="card-header bg-white">
+        <i class="bi bi-server me-1"></i>数据库状态
+    </div>
+    <div class="card-body">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted">连接状态</span>
+                            <span id="db-status" class="badge bg-secondary"><span class="spinner-border spinner-border-sm"></span></span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted">最新数据日期</span>
+                            <span id="db-date" class="fw-bold">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <div class="card bg-light">
+                    <div class="card-body py-2">
+                        <div class="d-flex justify-content-between">
+                            <span class="text-muted">股票数量</span>
+                            <span id="db-count" class="fw-bold">—</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 同步命令参考 -->
+<div class="card">
+    <div class="card-header bg-white">
+        <i class="bi bi-terminal me-1"></i>同步命令参考
+    </div>
+    <div class="card-body">
+        <pre class="bg-dark text-light p-3 rounded mb-0"><code># 同步全部免费数据
+python scripts/sync_free_data.py
+
+# 仅同步特定数据
+python scripts/sync_free_data.py --etf        # ETF行情
+python scripts/sync_free_data.py --cb         # 可转债
+python scripts/sync_free_data.py --index      # 指数成分股
+python scripts/sync_free_data.py --concept    # 板块概念
+python scripts/sync_free_data.py --northbound # 北向资金
+
+# 完整流水线（包含数据同步+选股+推送）
+python scripts/daily_alpha_run.py
+
+# 仅运行选股（跳过数据同步）
+python scripts/daily_alpha_run.py --skip-sync</code></pre>
+    </div>
+</div>
+
+<script>
+const coverageData = {
+    'stock_list': ['股票列表', true, true, true, true],
+    'daily': ['日线行情', true, true, true, true],
+    'realtime': ['实时行情', true, true, false, false],
+    'etf': ['ETF行情', true, true, false, true],
+    'convertible_bond': ['可转债', true, false, false, true],
+    'index_component': ['指数成分', true, false, false, true],
+    'concept': ['板块概念', true, false, false, true],
+    'northbound': ['北向资金', true, false, false, true],
+    'margin': ['融资融券', true, false, false, true],
+    'news': ['新闻资讯', true, false, false, true]
+};
+
+function loadStatus() {
+    fetch('/api/data_source/status')
+        .then(r => r.json())
+        .then(data => {
+            renderSources(data);
+            renderCoverage(data);
+        })
+        .catch(err => console.error('加载失败:', err));
+    
+    // 加载数据库状态
+    fetch('/api/status')
+        .then(r => r.json())
+        .then(data => {
+            const dbStatus = document.getElementById('db-status');
+            if (data.db_ok) {
+                dbStatus.className = 'badge bg-success';
+                dbStatus.textContent = '已连接';
+            } else {
+                dbStatus.className = 'badge bg-danger';
+                dbStatus.textContent = '断开';
+            }
+            document.getElementById('db-date').textContent = data.latest_date || '—';
+            document.getElementById('db-count').textContent = data.stock_count || 0;
+        })
+        .catch(err => console.error('DB状态加载失败:', err));
+}
+
+function renderSources(data) {
+    const sources = ['akshare', 'efinance', 'baostock', 'tushare'];
+    const names = ['AKShare', 'eFinance', 'Baostock', 'Tushare'];
+    const colors = ['primary', 'success', 'warning', 'danger'];
+    
+    sources.forEach((src, i) => {
+        const info = data.sources[src];
+        const statusEl = document.getElementById(`status-${src}`);
+        const verEl = document.getElementById(`ver-${src}`);
+        const cardEl = document.getElementById(`card-${src}`);
+        
+        verEl.textContent = info.version || '—';
+        
+        if (info.installed) {
+            statusEl.innerHTML = '<span class="badge bg-success">已安装</span>';
+            cardEl.classList.remove('border-secondary');
+            cardEl.classList.add(`border-${colors[i]}`);
+        } else {
+            statusEl.innerHTML = '<span class="badge bg-danger">未安装</span>';
+        }
+    });
+}
+
+function renderCoverage(data) {
+    const coverage = data.coverage || {};
+    let html = '';
+    
+    Object.entries(coverageData).forEach(([key, [name, akshare, efinance, baostock, tushare]]) => {
+        const check = (val) => val ? '<span class="text-success">✅</span>' : '<span class="text-danger">❌</span>';
+        html += `<tr>
+            <td>${name}</td>
+            <td class="text-center">${check(akshare)}</td>
+            <td class="text-center">${check(efinance)}</td>
+            <td class="text-center">${check(baostock)}</td>
+            <td class="text-center">${check(tushare)}</td>
+        </tr>`;
+    });
+    
+    document.getElementById('coverage-table').innerHTML = html || '<tr><td colspan="5" class="text-center">暂无数据</td></tr>';
+}
+
+// 初始加载
+loadStatus();
+</script>
+{% endblock %}

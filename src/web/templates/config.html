@@ -1,0 +1,359 @@
+{% extends "base.html" %}
+{% block title %}系统配置{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h5 class="fw-bold mb-0"><i class="bi bi-gear me-2 text-secondary"></i>系统配置</h5>
+    <button class="btn btn-sm btn-outline-primary" onclick="loadConfig()">
+        <i class="bi bi-arrow-clockwise me-1"></i>刷新
+    </button>
+</div>
+
+<div class="row g-4">
+    <!-- 资金与仓位配置 -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <i class="bi bi-cash-stack me-1 text-success"></i>资金与仓位配置
+            </div>
+            <div class="card-body config-form" id="portfolio-form">
+                <div class="text-center py-3 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+            <div class="card-footer bg-white">
+                <button class="btn btn-primary" onclick="savePortfolioConfig(this)">
+                    <i class="bi bi-save me-1"></i>保存配置
+                </button>
+                <small class="text-muted ms-2">保存后重启服务生效</small>
+            </div>
+        </div>
+    </div>
+
+    <!-- 策略参数 -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <i class="bi bi-sliders me-1 text-primary"></i>策略参数
+            </div>
+            <div class="card-body config-form" id="strategy-form">
+                <div class="text-center py-3 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+            <div class="card-footer bg-white">
+                <button class="btn btn-primary" onclick="saveStrategyConfig(this)">
+                    <i class="bi bi-save me-1"></i>保存策略参数
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LLM 配置（只读） -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <i class="bi bi-cpu me-1 text-info"></i>LLM 配置
+                <span class="badge bg-secondary ms-2 small">只读</span>
+            </div>
+            <div class="card-body" id="llm-config">
+                <div class="text-center py-3 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+            <div class="card-footer bg-white">
+                <button class="btn btn-outline-info btn-sm" onclick="testLLM(this)">
+                    <i class="bi bi-send me-1"></i>测试 LLM 连通
+                </button>
+                <div id="llm-test-result" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 钉钉通知 -->
+    <div class="col-md-6">
+        <div class="card h-100">
+            <div class="card-header bg-white">
+                <i class="bi bi-bell me-1 text-warning"></i>通知配置
+            </div>
+            <div class="card-body" id="notif-config">
+                <div class="text-center py-3 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+            <div class="card-footer bg-white">
+                <button class="btn btn-outline-warning btn-sm" onclick="testDingTalk(this)">
+                    <i class="bi bi-chat-dots me-1"></i>发送测试消息
+                </button>
+                <div id="dingtalk-test-result" class="mt-2"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 热点板块快速编辑 -->
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header bg-white">
+                <i class="bi bi-fire me-1 text-danger"></i>热点板块配置
+                <small class="text-muted ms-2">（详细权重调整请前往<a href="/sectors" class="ms-1">板块管理</a>页面）</small>
+            </div>
+            <div class="card-body" id="topics-config">
+                <div class="text-center py-3 text-muted">
+                    <span class="spinner-border spinner-border-sm me-2"></span>加载中...
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let configData = {};
+
+async function loadConfig() {
+    try {
+        configData = await API.get('/api/config/get');
+        renderPortfolioForm(configData);
+        renderStrategyForm(configData);
+        renderLLMConfig(configData);
+        renderNotifConfig(configData);
+        renderTopicsConfig(configData);
+    } catch (e) {
+        showToast('danger', '加载配置失败：' + e.message);
+    }
+}
+
+// 资金与仓位表单
+function renderPortfolioForm(cfg) {
+    document.getElementById('portfolio-form').innerHTML = `
+        <div class="mb-3">
+            <label class="form-label">总资金（元）</label>
+            <input type="number" class="form-control" id="cfg-total-capital" value="${cfg.total_capital || 1000000}" step="10000">
+            <div class="form-text">账户总资金，用于计算单仓上限</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">最大单仓比例</label>
+            <div class="input-group">
+                <input type="number" class="form-control" id="cfg-max-pos" value="${((cfg.max_position_pct || 0.15) * 100).toFixed(0)}" min="1" max="50" step="1">
+                <span class="input-group-text">%</span>
+            </div>
+            <div class="form-text">单只股票最大占总资金比例（建议10-20%）</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">最大总仓位</label>
+            <div class="input-group">
+                <input type="number" class="form-control" id="cfg-max-total" value="${((cfg.max_total_position || 0.80) * 100).toFixed(0)}" min="20" max="100" step="5">
+                <span class="input-group-text">%</span>
+            </div>
+            <div class="form-text">所有股票总持仓不超过此比例（建议70-90%，留现金应对波动）</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">止损线</label>
+            <div class="input-group">
+                <input type="number" class="form-control" id="cfg-stop-loss" value="${((cfg.stop_loss_pct || 0.08) * 100).toFixed(0)}" min="3" max="20" step="1">
+                <span class="input-group-text">%</span>
+            </div>
+            <div class="form-text">跌幅超过此值自动止损（默认-8%）</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">止盈线</label>
+            <div class="input-group">
+                <input type="number" class="form-control" id="cfg-take-profit" value="${((cfg.take_profit_pct || 0.20) * 100).toFixed(0)}" min="5" max="100" step="5">
+                <span class="input-group-text">%</span>
+            </div>
+            <div class="form-text">涨幅超过此值触发止盈提示（默认+20%）</div>
+        </div>`;
+}
+
+// 策略参数表单
+function renderStrategyForm(cfg) {
+    document.getElementById('strategy-form').innerHTML = `
+        <div class="mb-3">
+            <label class="form-label">每日选股数量（TopK）</label>
+            <input type="number" class="form-control" id="cfg-topk" value="${cfg.strategy_topk || 10}" min="5" max="50" step="1">
+            <div class="form-text">每次选股输出的股票数量（默认10，输出文件最多20只）</div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label">市值上限（亿元）</label>
+            <input type="number" class="form-control" id="cfg-max-mv" value="${cfg.max_mv_yi || 800}" min="50" max="5000" step="50">
+            <div class="form-text">过滤超大盘股，偏好中小盘（默认800亿）</div>
+        </div>
+        <div class="p-3 bg-light rounded">
+            <div class="small text-muted mb-2 fw-bold">策略权重说明（固定，需改代码）：</div>
+            <div class="d-flex gap-3 flex-wrap">
+                <div class="text-center">
+                    <div class="fs-5 fw-bold text-primary">50%</div>
+                    <div class="small text-muted">AI评分<br>LightGBM</div>
+                </div>
+                <div class="text-center">
+                    <div class="fs-5 fw-bold text-warning">30%</div>
+                    <div class="small text-muted">事件驱动<br>热点板块</div>
+                </div>
+                <div class="text-center">
+                    <div class="fs-5 fw-bold text-success">20%</div>
+                    <div class="small text-muted">基本面<br>ROE/PE</div>
+                </div>
+            </div>
+        </div>`;
+}
+
+// LLM配置（只读）
+function renderLLMConfig(cfg) {
+    document.getElementById('llm-config').innerHTML = `
+        <table class="table table-sm mb-0">
+            <tr>
+                <td class="text-muted" style="width:100px">提供商</td>
+                <td><strong>${cfg.llm_provider || '未配置'}</strong></td>
+            </tr>
+            <tr>
+                <td class="text-muted">模型</td>
+                <td><code>${cfg.llm_model || '未配置'}</code></td>
+            </tr>
+            <tr>
+                <td class="text-muted">API Key</td>
+                <td><span class="text-muted">*** (在 config/settings.yaml 中配置)</span></td>
+            </tr>
+        </table>
+        <div class="alert alert-info py-2 mt-3 mb-0 small">
+            <i class="bi bi-info-circle me-1"></i>
+            LLM 配置（API Key、Base URL）请直接编辑 <code>config/settings.yaml</code>，修改后需重启服务。
+        </div>`;
+}
+
+// 通知配置
+function renderNotifConfig(cfg) {
+    document.getElementById('notif-config').innerHTML = `
+        <table class="table table-sm mb-0">
+            <tr>
+                <td class="text-muted" style="width:100px">推送状态</td>
+                <td>${cfg.notification_enabled
+                    ? '<span class="badge bg-success">已启用</span>'
+                    : '<span class="badge bg-secondary">未启用</span>'}</td>
+            </tr>
+            <tr>
+                <td class="text-muted">钉钉 Webhook</td>
+                <td><span class="text-muted">*** (在 settings.yaml 配置)</span></td>
+            </tr>
+            <tr>
+                <td class="text-muted">安全关键词</td>
+                <td><code>提醒</code>（固定，自动附加到标题）</td>
+            </tr>
+        </table>
+        <div class="alert alert-warning py-2 mt-3 mb-0 small">
+            <i class="bi bi-exclamation-triangle me-1"></i>
+            Webhook URL 请在 <code>config/settings.yaml</code> 的 <code>notification.dingtalk.webhook</code> 中配置。
+        </div>`;
+}
+
+// 热点板块显示
+function renderTopicsConfig(cfg) {
+    const topics = cfg.hot_topics || [];
+    const weights = cfg.hot_topic_weights || {};
+    if (!topics.length) {
+        document.getElementById('topics-config').innerHTML = emptyHTML('暂无热点板块配置，请在 settings.yaml 中配置 hot_topics');
+        return;
+    }
+    const badges = topics.map(t => {
+        const w = weights[t] || 1.0;
+        const cls = w >= 2 ? 'bg-danger' : w >= 1.5 ? 'bg-warning text-dark' : 'bg-secondary';
+        return `<span class="badge ${cls} me-1 mb-1">${t} (${w.toFixed(1)}x)</span>`;
+    }).join('');
+    document.getElementById('topics-config').innerHTML = `
+        <p class="text-muted small mb-2">当前配置的热点板块（权重越高，对应板块股票评分加成越大）：</p>
+        <div class="mb-3">${badges}</div>
+        <a href="/sectors" class="btn btn-outline-primary btn-sm">
+            <i class="bi bi-sliders me-1"></i>前往板块管理页面调整权重
+        </a>`;
+}
+
+// 保存资金配置
+async function savePortfolioConfig(btn) {
+    const data = {
+        total_capital: parseFloat(document.getElementById('cfg-total-capital').value) || 1000000,
+        max_position_pct: (parseFloat(document.getElementById('cfg-max-pos').value) || 15) / 100,
+        max_total_position: (parseFloat(document.getElementById('cfg-max-total').value) || 80) / 100,
+        stop_loss_pct: (parseFloat(document.getElementById('cfg-stop-loss').value) || 8) / 100,
+        take_profit_pct: (parseFloat(document.getElementById('cfg-take-profit').value) || 20) / 100,
+    };
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中...';
+    try {
+        const r = await API.post('/api/config/update', data);
+        showToast(r.success ? 'success' : 'danger', r.message || r.error);
+    } catch (e) {
+        showToast('danger', '保存失败：' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-save me-1"></i>保存配置';
+    }
+}
+
+// 保存策略参数
+async function saveStrategyConfig(btn) {
+    const data = {
+        strategy_topk: parseInt(document.getElementById('cfg-topk').value) || 10,
+        max_mv_yi: parseInt(document.getElementById('cfg-max-mv').value) || 800,
+    };
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>保存中...';
+    try {
+        const r = await API.post('/api/config/update', data);
+        showToast(r.success ? 'success' : 'danger', r.message || r.error);
+    } catch (e) {
+        showToast('danger', '保存失败：' + e.message);
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-save me-1"></i>保存策略参数';
+    }
+}
+
+// 测试 LLM
+async function testLLM(btn) {
+    const resultEl = document.getElementById('llm-test-result');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>测试中...';
+    resultEl.innerHTML = '';
+    try {
+        const r = await API.post('/api/test/llm');
+        if (r.success) {
+            resultEl.innerHTML = `<div class="alert alert-success py-2 small mt-2 mb-0">
+                <strong>连接成功</strong><br><em>${r.response || ''}</em>
+            </div>`;
+        } else {
+            resultEl.innerHTML = `<div class="alert alert-danger py-2 small mt-2 mb-0">${r.error}</div>`;
+        }
+    } catch (e) {
+        resultEl.innerHTML = `<div class="alert alert-danger py-2 small mt-2 mb-0">${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-send me-1"></i>测试 LLM 连通';
+    }
+}
+
+// 测试钉钉
+async function testDingTalk(btn) {
+    const resultEl = document.getElementById('dingtalk-test-result');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span>发送中...';
+    resultEl.innerHTML = '';
+    try {
+        const r = await API.post('/api/test/dingtalk');
+        if (r.success) {
+            resultEl.innerHTML = `<div class="alert alert-success py-2 small mt-2 mb-0">
+                <i class="bi bi-check-circle me-1"></i>钉钉消息发送成功，请在钉钉中查看
+            </div>`;
+        } else {
+            resultEl.innerHTML = `<div class="alert alert-danger py-2 small mt-2 mb-0">${r.error}</div>`;
+        }
+    } catch (e) {
+        resultEl.innerHTML = `<div class="alert alert-danger py-2 small mt-2 mb-0">${e.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerHTML = '<i class="bi bi-chat-dots me-1"></i>发送测试消息';
+    }
+}
+
+loadConfig();
+</script>
+{% endblock %}
