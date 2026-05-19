@@ -5,6 +5,8 @@ TradingAgent 主编排器
 整合 DecisionEngine / RiskController / ReviewAgent，提供 run_decision / run_monitor / run_review 接口
 """
 import time
+import json
+import os
 from datetime import datetime
 from typing import Optional
 
@@ -270,8 +272,20 @@ class TradingAgent:
         print(f"  盘前决策  |  {trade_date}")
         print(f"{'='*60}")
 
-        # 生成决策计划
-        plan = self._decision_engine.run(trade_date)
+        # 优先加载晨间计划（08:30 morning_push.py 保存），不再独立生成
+        plan_path = f"output/agent_plan_{trade_date.replace('-', '')}.json"
+        if os.path.exists(plan_path):
+            try:
+                with open(plan_path, 'r', encoding='utf-8') as f:
+                    plan = json.load(f)
+                logger.info(f"[Agent] ✅ 已加载晨间计划: {plan_path} (trades={len(plan.get('trades',[]))})")
+                # 删除文件，避免次日误读
+                os.remove(plan_path)
+            except Exception as e:
+                logger.warning(f"[Agent] 晨间计划加载失败，重新生成: {e}")
+                plan = self._decision_engine.run(trade_date)
+        else:
+            plan = self._decision_engine.run(trade_date)
 
         # ── HoldingManager 持仓稳定性管理 ★ ───────────────────────────────
         # 将 DecisionEngine 的选股信号经过持仓稳定性管理器处理

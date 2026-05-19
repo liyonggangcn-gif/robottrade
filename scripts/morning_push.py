@@ -5,6 +5,7 @@
 import sys
 import os
 import io
+import json
 from datetime import datetime
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
@@ -454,6 +455,16 @@ def _get_agent_plan_section(timeout: int = 120) -> str:
 
         if not plan or 'trades' not in plan:
             return ""
+
+        # ★ 保存计划到文件，供 09:00 实际执行时使用
+        try:
+            os.makedirs('output', exist_ok=True)
+            plan_path = f"output/agent_plan_{trade_date}.json"
+            with open(plan_path, 'w', encoding='utf-8') as f:
+                json.dump(plan, f, ensure_ascii=False, indent=2)
+            print(f"[Agent] 计划已保存到 {plan_path}")
+        except Exception as e:
+            print(f"[WARN] 保存执行计划失败: {e}")
 
         regime_icon = {'bull': '🐂', 'bear': '🐻', 'neutral': '➖'}.get(plan.get('market_regime', ''), '📊')
         regime_name = {'bull': '牛市', 'bear': '熊市', 'neutral': '震荡'}.get(plan.get('market_regime', ''), plan.get('market_regime', ''))

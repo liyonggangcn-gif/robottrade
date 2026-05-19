@@ -89,8 +89,11 @@ def init_cron_file():
 30 8 * * 1 cd /home/li/robottrade && . venv/bin/activate && python3 scripts/weekly_small_cap_push.py >> logs/weekly_small_cap.log 2>&1
 30 9 * * 1 cd /home/li/robottrade && . venv/bin/activate && python3 scripts/push_etf_strategies.py >> logs/push_etf.log 2>&1
 
-# === LLM Agent (在选股完成后的09:00) ===
+# === LLM Agent ===
+# 09:00 盘前决策执行（加载08:30晨间计划，不再独立生成）
 0 9 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python3 scripts/run_trading_agent.py --phase decision >> logs/agent_decision.log 2>&1
+# 16:30 盘后复盘（AI归因+持仓分析+钉钉推送）
+30 16 * * 1-5 cd /home/li/robottrade && . venv/bin/activate && python3 scripts/run_trading_agent.py --phase review >> logs/agent_review.log 2>&1
 30 17 * * 1-5 cd /home/li/stock_us && python3 scripts/sync_us_all.py >> logs/sync_us.log 2>&1
 """
     
